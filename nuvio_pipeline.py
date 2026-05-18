@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import json
 import requests
 import subprocess
 from PIL import Image
@@ -10,18 +11,15 @@ from PIL import Image
 # ---------------------------------------------------------
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 FANART_API_KEY = os.environ.get("FANART_API_KEY")
-AIOMETADATA_URL = os.environ.get("AIOMETADATA_URL")
 
 HEADERS = {
     "accept": "application/json",
     "Authorization": f"Bearer {TMDB_API_KEY}"
 }
 
-# Safety limit for all web requests (in seconds)
 TIMEOUT_LIMIT = 15
 
 def log(message):
-    """Forces logs to print instantly to the GitHub Action terminal."""
     print(message, flush=True)
 
 def sanitize_filename(name):
@@ -52,7 +50,6 @@ def resolve_to_tmdb_id(meta_item):
             if results:
                 return str(results[0]["id"])
         except requests.exceptions.RequestException:
-            log(f"   [WARNING] TMDb lookup timed out for {name}")
             return None
             
     year = meta_item.get("releaseInfo", "")
@@ -65,7 +62,7 @@ def resolve_to_tmdb_id(meta_item):
         if results:
             return str(results[0]["id"])
     except requests.exceptions.RequestException:
-        log(f"   [WARNING] Text search timed out for {name}")
+        pass
         
     return None
 
@@ -85,7 +82,6 @@ def fetch_assets(tmdb_id, type_str):
         with open(poster_path, 'wb') as f:
             f.write(requests.get(poster_url, timeout=TIMEOUT_LIMIT).content)
     except requests.exceptions.RequestException:
-        log(f"   [WARNING] Failed downloading poster for TMDb ID {tmdb_id}")
         return None, None
         
     # Fetch Logo
@@ -102,7 +98,6 @@ def fetch_assets(tmdb_id, type_str):
         with open(logo_path, 'wb') as f:
             f.write(requests.get(logo_url, timeout=TIMEOUT_LIMIT).content)
     except requests.exceptions.RequestException:
-        log(f"   [WARNING] Failed downloading logo from Fanart.tv for TMDb ID {tmdb_id}")
         if os.path.exists(poster_path): os.remove(poster_path)
         return None, None
         
@@ -112,19 +107,22 @@ def fetch_assets(tmdb_id, type_str):
 # Main Execution Routine
 # ---------------------------------------------------------
 def main():
-    if not all([TMDB_API_KEY, FANART_API_KEY, AIOMETADATA_URL]):
+    if not all([TMDB_API_KEY, FANART_API_KEY]):
         log("[CRITICAL] Missing API Keys. Verification failed.")
         return
 
-    log("Connecting to Nuvio manifest endpoint...")
-    try:
-        manifest = requests.get(AIOMETADATA_URL, timeout=TIMEOUT_LIMIT).json()
-    except requests.exceptions.RequestException as e:
-        log(f"[CRITICAL] Could not connect to AIOMETADATA_URL: {e}")
+    # NEW LOGIC: Read from local file instead of URL
+    manifest_path = "AIOMetadata.json"
+    if not os.path.exists(manifest_path):
+        log(f"[CRITICAL] Could not find {manifest_path} in the repository. Please upload it.")
         return
 
+    log(f"Reading local {manifest_path}...")
+    with open(manifest_path, 'r', encoding='utf-8') as f:
+        manifest = json.load(f)
+
     catalogs = manifest.get("catalogs", [])
-    log(f"Found {len(catalogs)} catalogs to process.")
+    log(f"Found {len(catalogs)} catalogs in your file.")
 
     for catalog in catalogs:
         raw_name = catalog.get("name", "Unknown_Catalog")
@@ -135,14 +133,15 @@ def main():
         os.makedirs(dir_logo_cards, exist_ok=True)
         os.makedirs(dir_dynamic, exist_ok=True)
         
-        catalog_url = AIOMETADATA_URL.replace("manifest.json", f"catalog/{catalog['type']}/{catalog['id']}.json")
+        # Build the Stremio public API endpoint for this specific catalog ID
+        catalog_url = f"https://aiometadata.strem.fun/catalog/{catalog['type']}/{catalog['id']}.json"
         log(f"\nProcessing Catalog: {raw_name}")
         
         try:
             items = requests.get(catalog_url, timeout=TIMEOUT_LIMIT).json().get("metas", [])
             log(f" -> Catalog contains {len(items)} items.")
         except requests.exceptions.RequestException:
-            log(f" [WARNING] Could not fetch catalog items for {raw_name}. Skipping.")
+            log(f" [WARNING] Could not fetch movies for {raw_name}. Skipping.")
             continue
 
         for item in items:
@@ -152,7 +151,6 @@ def main():
             
             tmdb_id = resolve_to_tmdb_id(item)
             if not tmdb_id:
-                log(f"   -> Skip: Unable to resolve universal ID.")
                 continue
                 
             out_logo_jpg = os.path.join(dir_logo_cards, f"{clean_title}.jpg")
@@ -161,45 +159,28 @@ def main():
             out_dynamic_webp = os.path.join(dir_dynamic, f"{clean_title}.webp")
             
             if os.path.exists(out_logo_jpg) and os.path.exists(out_dynamic_jpg):
-                log(f"   -> Skip: All backdrops already exist in CDN cache.")
+                log(f"   -> Skip: All backdrops exist.")
                 continue
                 
             poster_file, logo_file = fetch_assets(tmdb_id, item.get("type", "movie"))
             if not poster_file or not logo_file:
-                log(f"   -> Skip: Missing structural assets on TMDb/Fanart.")
+                log(f"   -> Skip: Missing assets.")
                 continue
                 
-            # STYLE 1: Logo Cards
             if not os.path.exists(out_logo_jpg):
-                log(f"   -> Launching logo_cards.py engine...")
+                log(f"   -> Launching logo_cards.py...")
                 try:
-                    subprocess.run(
-                        ["python", "logo_cards.py", "--poster", poster_file, "--logo", logo_file, "--output", out_logo_jpg, "--skip-logos"],
-                        check=True, timeout=60
-                    )
-                    if os.path.exists(out_logo_jpg):
-                        convert_to_webp(out_logo_jpg, out_logo_webp)
-                except subprocess.TimeoutExpired:
-                    log(f"   [WARNING] logo_cards.py froze for 60 seconds on {title}. Terminated.")
-                except subprocess.CalledProcessError:
-                    log(f"   [WARNING] logo_cards.py internal error for {title}.")
+                    subprocess.run(["python", "logo_cards.py", "--poster", poster_file, "--logo", logo_file, "--output", out_logo_jpg, "--skip-logos"], check=True, timeout=60)
+                    if os.path.exists(out_logo_jpg): convert_to_webp(out_logo_jpg, out_logo_webp)
+                except: pass
 
-            # STYLE 2: Dynamic Grids
             if not os.path.exists(out_dynamic_jpg):
-                log(f"   -> Launching backdrop_T2.py engine...")
+                log(f"   -> Launching backdrop_T2.py...")
                 try:
-                    subprocess.run(
-                        ["python", "backdrop_T2.py", "--poster", poster_file, "--logo", logo_file, "--output", out_dynamic_jpg, "--skip-logos"],
-                        check=True, timeout=60
-                    )
-                    if os.path.exists(out_dynamic_jpg):
-                        convert_to_webp(out_dynamic_jpg, out_dynamic_webp)
-                except subprocess.TimeoutExpired:
-                    log(f"   [WARNING] backdrop_T2.py froze for 60 seconds on {title}. Terminated.")
-                except subprocess.CalledProcessError:
-                    log(f"   [WARNING] backdrop_T2.py internal error for {title}.")
+                    subprocess.run(["python", "backdrop_T2.py", "--poster", poster_file, "--logo", logo_file, "--output", out_dynamic_jpg, "--skip-logos"], check=True, timeout=60)
+                    if os.path.exists(out_dynamic_jpg): convert_to_webp(out_dynamic_jpg, out_dynamic_webp)
+                except: pass
 
-            # Cleanup temp files
             if os.path.exists(poster_file): os.remove(poster_file)
             if os.path.exists(logo_file): os.remove(logo_file)
 

@@ -2,8 +2,9 @@ name: Nuvio Backdrop Renderer
 
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 2 * * *'
+  push:
+    paths:
+      - 'AIOMetadata.json' # This line makes it run automatically when you upload this file!
 
 jobs:
   render_backdrops:
@@ -21,12 +22,8 @@ jobs:
           
       - name: Download Rendering Engine & Install Dependencies
         run: |
-          # 1. Download the actual image engine from the original creator
           git clone https://github.com/bramst0ne/prism-wallpapers.git engine
-          # 2. Copy those files into our main workspace so our script can see them
           cp -r engine/* .
-          
-          # 3. Install required software (both ours, and the engine's)
           python -m pip install --upgrade pip
           pip install requests Pillow
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
@@ -36,7 +33,7 @@ jobs:
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
-          AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
+          # AIOMETADATA_URL has been intentionally removed!
         run: python nuvio_pipeline.py
         
       - name: Commit and Push CDN Assets

@@ -1,9 +1,9 @@
 name: Nuvio Backdrop Renderer
 
 on:
-  workflow_dispatch:  # Allows you to click a button to run it manually
+  workflow_dispatch:
   # schedule:
-  #   - cron: '0 2 * * *'  # Un-comment to run automatically at 2:00 AM daily
+  #   - cron: '0 2 * * *'
 
 jobs:
   render_backdrops:
@@ -19,11 +19,18 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           
-      - name: Install Dependencies
+      - name: Download Rendering Engine & Install Dependencies
         run: |
+          # 1. Download the actual image engine from the original creator
+          git clone https://github.com/bramst0ne/prism-wallpapers.git engine
+          # 2. Copy those files into our main workspace so our script can see them
+          cp -r engine/* .
+          
+          # 3. Install required software (both ours, and the engine's)
           python -m pip install --upgrade pip
           pip install requests Pillow
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f engine/requirements.txt ]; then pip install -r engine/requirements.txt; fi
           
       - name: Run Nuvio Automation Pipeline
         env:

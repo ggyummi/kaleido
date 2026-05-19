@@ -126,11 +126,15 @@ def main():
     with open(target_file, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
-    # 2. Handle both exported raw lists and Stremio dictionary formats
+   # 2. Handle both exported raw lists and Stremio dictionary formats
     if isinstance(manifest, list):
         catalogs = manifest
     else:
-        catalogs = manifest.get("catalogs", [])
+        # Check if catalogs are at the root level OR hidden inside a 'config' section
+        if "config" in manifest and "catalogs" in manifest["config"]:
+            catalogs = manifest["config"]["catalogs"]
+        else:
+            catalogs = manifest.get("catalogs", [])
         
     log(f"Found {len(catalogs)} catalogs in your file.")
 

@@ -2,8 +2,6 @@
 
 Automated pipeline that generates cinematic backdrops and catalog cover cards for [Nuvio Collections](https://github.com/luckynumb3rs/stremio-perfect-setup), served as a free static CDN via [jsDelivr](https://www.jsdelivr.com/). Images refresh automatically every week via GitHub Actions — zero manual maintenance once set up.
 
-Inspired by [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup), [bramst0ne/prism-wallpapers](https://github.com/bramst0ne/prism-wallpapers), and [betterer-covers](https://betterer-covers.itsrenoria.workers.dev/).
-
 ---
 
 ## What this repo produces

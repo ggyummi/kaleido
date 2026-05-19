@@ -1,0 +1,136 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .github/workflows/nuvio_render.yml
+#
+# tiny-deluxe · Nuvio Backdrop & Card CDN  —  GitHub Actions Workflow
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# What this workflow produces
+# ─────────────────────────────────────────────────────────────────────────────
+#   collections/{CATALOG}/backdrop/{Title}.jpg   ← per-item cinematic backdrop
+#   collections/{CATALOG}/backdrop/{Title}.webp  ← optimised WebP twin
+#   collections/{CATALOG}/cards/{CATALOG}.jpg    ← catalog cover card  ← USE THIS IN NUVIO
+#   collections/{CATALOG}/cards/{CATALOG}.webp   ← optimised WebP twin ← USE THIS IN NUVIO
+#
+# Required GitHub Secrets  (Settings → Secrets and variables → Actions)
+# ─────────────────────────────────────────────────────────────────────────────
+#   TMDB_API_KEY      https://www.themoviedb.org/settings/api
+#   FANART_API_KEY    https://fanart.tv/get-an-api-key/
+#
+# Optional GitHub Secret (enables Trakt, Simkl, MAL, Kitsu, PublicMetaDB)
+# ─────────────────────────────────────────────────────────────────────────────
+#   AIOMETADATA_URL   Your AIOMetadata manifest URL, e.g.
+#                     https://your-aiometadata-instance.com/abc123/manifest.json
+#                     When set, the pipeline fetches LIVE catalog data from your
+#                     AIOMetadata server (which handles all auth transparently).
+#                     When absent, the pipeline reads AIOMetadata.json from the
+#                     repository and uses TMDb-native catalog endpoints only.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: "🎬 Nuvio Backdrop & Card CDN Render"
+
+on:
+  # ── Manual trigger ─────────────────────────────────────────────────────────
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Optional note (e.g. 'Added new catalogs')"
+        required: false
+        default: "Manual refresh"
+
+  # ── Auto-trigger when a new AIOMetadata.json export is uploaded ────────────
+  push:
+    paths:
+      - "AIOMetadata.json"
+
+  # ── Scheduled automatic run — every Monday at 03:00 UTC ───────────────────
+  schedule:
+    - cron: "0 3 * * 1"   # Every Monday 03:00 UTC → https://crontab.guru/#0_3_*_*_1
+
+# Grant write access so the bot can push new images back to the repo
+permissions:
+  contents: write
+
+jobs:
+  render-backdrops:
+    name: "Render Backdrops & Cards, Push to CDN"
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ── 1. Checkout (full history required for reliable push) ───────────────
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Python ──────────────────────────────────────────────────────────
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Install Helvetica-equivalent font ───────────────────────────────
+      # fonts-urw-base35 provides NimbusSans-Bold.otf which is the open-source
+      # metric-equivalent of Helvetica Neue Bold — used for catalog card text.
+      - name: "🖋 Install Helvetica-equivalent font (NimbusSans Bold)"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-urw-base35 fonts-liberation
+          fc-cache -fv
+          fc-list | grep -i nimbus | head -5 || true
+          fc-list | grep -i liberation | grep -i bold | head -5 || true
+
+      # ── 4. Python dependencies ─────────────────────────────────────────────
+      - name: "📦 Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      # ── 5. Run pipeline ────────────────────────────────────────────────────
+      - name: "🚀 Run Nuvio backdrop & card pipeline"
+        env:
+          TMDB_API_KEY:    ${{ secrets.TMDB_API_KEY }}
+          FANART_API_KEY:  ${{ secrets.FANART_API_KEY }}
+          AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
+        run: |
+          python nuvio_pipeline.py
+
+      # ── 6. Commit & push all new assets back to the repository ─────────────
+      - name: "📤 Commit & push new backdrops and cards to CDN"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add collections/
+
+          if git diff --cached --quiet; then
+            echo "✅  No new assets generated — nothing to commit."
+          else
+            CHANGED=$(git diff --cached --name-only | wc -l)
+            BACKDROPS=$(git diff --cached --name-only | grep 'backdrop/' | wc -l)
+            CARDS=$(git diff --cached --name-only | grep 'cards/' | wc -l)
+            git commit -m "🎬 Refresh Nuvio CDN — ${BACKDROPS} backdrop(s), ${CARDS} card(s) [Automated Run]"
+
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
+
+            echo "✅  Pushed ${CHANGED} asset(s) to repository CDN."
+            echo "    ↳ ${BACKDROPS} backdrop(s)"
+            echo "    ↳ ${CARDS} catalog card(s)"
+          fi
+
+      # ── 7. Purge jsDelivr CDN cache ────────────────────────────────────────
+      # Hits purge.jsdelivr.net for every updated file so Nuvio gets fresh
+      # images immediately instead of waiting up to 7 days for cache expiry.
+      # Runs even if no new assets were committed (safe — jsDelivr ignores
+      # purge requests for files that haven't changed).
+      - name: "🧹 Purge jsDelivr CDN cache"
+        env:
+          REPO_SLUG: ${{ github.repository }}
+        run: |
+          python collections/scripts/purge.py

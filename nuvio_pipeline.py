@@ -13,8 +13,7 @@ TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 FANART_API_KEY = os.environ.get("FANART_API_KEY")
 
 HEADERS = {
-    "accept": "application/json",
-    "Authorization": f"Bearer {TMDB_API_KEY}"
+    "accept": "application/json"
 }
 
 TIMEOUT_LIMIT = 20
@@ -40,7 +39,7 @@ def fetch_assets(tmdb_id, type_str):
     # Fetch Poster
     tmdb_url = f"https://api.themoviedb.org/3/{type_str}/{tmdb_id}/images"
     try:
-        img_data = requests.get(tmdb_url, headers=HEADERS, timeout=TIMEOUT_LIMIT).json()
+        img_data = requests.get(tmdb_url, headers=HEADERS, params={"api_key": TMDB_API_KEY}, timeout=TIMEOUT_LIMIT).json()
         posters = img_data.get("posters", [])
         if not posters:
             return None, None
@@ -78,7 +77,6 @@ def main():
         log("[CRITICAL] Missing API Keys. Verification failed.")
         return
 
-    # Check multiple locations for the file
     target_file = None
     if os.path.exists("AIOMetadata.json"):
         target_file = "AIOMetadata.json"
@@ -93,7 +91,6 @@ def main():
     with open(target_file, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
-    # Handle finding the actual catalogs for our loop
     if isinstance(manifest, list):
         catalogs = manifest
     else:
@@ -107,7 +104,7 @@ def main():
     for catalog in catalogs:
         raw_name = catalog.get("name", "Unknown_Catalog")
         catalog_name = sanitize_filename(raw_name)
-        catalog_id = catalog.get("id", "")
+        catalog_id = catalog.get("id", "").lower()
         cat_type = "movie" if catalog.get("type") == "movie" else "tv"
         
         dir_logo_cards = os.path.join("collections", catalog_name, "logo_cards")
@@ -117,13 +114,26 @@ def main():
         
         log(f"\nProcessing Catalog: {raw_name}")
         
-        # --- THE DIRECT TMDB OVERRIDE ---
         tmdb_url = None
         metadata = catalog.get("metadata", {})
         discover = metadata.get("discover", {})
         
-        if discover and "params" in discover:
-            # Build URL from specific TMDB filters (genres, years, score rules)
+        # --- THE NEW OVERRIDE ENGINE ---
+        if "anime" in catalog_id or "mal" in catalog_id or "kitsu" in catalog_id or "anilist" in catalog_id:
+            # Fake it with popular Anime from TMDB
+            log(" -> Detected Anime/External list. Using representative Anime pool.")
+            if cat_type == "movie":
+                tmdb_url = "https://api.themoviedb.org/3/discover/movie?sort_by=popularity.desc&include_adult=false&with_genres=16&with_original_language=ja&vote_count.gte=20&with_release_type=4|5|6"
+            else:
+                tmdb_url = "https://api.themoviedb.org/3/discover/tv?sort_by=popularity.desc&include_adult=false&with_genres=16&with_original_language=ja&vote_count.gte=10&with_status=0|3|4|5"
+                
+        elif "simkl" in catalog_id or "trakt" in catalog_id or "pmdb" in catalog_id or "publicmetadb" in catalog_id:
+            # Fake it with generic popular movies/shows from TMDB
+            log(" -> Detected Private Tracking list. Using representative popular pool.")
+            tmdb_url = f"https://api.themoviedb.org/3/{cat_type}/popular?language=en-US"
+            
+        elif discover and "params" in discover:
+            # Standard TMDB dynamic filter
             media_type = "movie" if discover.get("mediaType") == "movie" else "tv"
             params = discover.get("params", {})
             query_parts = []
@@ -133,17 +143,18 @@ def main():
                 elif v is not None: query_parts.append(f"{k}={v}")
             query_string = "&".join(query_parts)
             tmdb_url = f"https://api.themoviedb.org/3/discover/{media_type}?{query_string}"
+            
         elif "trending" in catalog_id:
             tmdb_url = f"https://api.themoviedb.org/3/trending/{cat_type}/week?language=en-US"
         elif "top_rated" in catalog_id:
             tmdb_url = f"https://api.themoviedb.org/3/{cat_type}/top_rated?language=en-US"
         else:
-            # Fallback for "Popular" or missing private Trakt/Simkl tokens
             tmdb_url = f"https://api.themoviedb.org/3/{cat_type}/popular?language=en-US"
             
+        # --- END OVERRIDE ENGINE ---
+            
         try:
-            # Query TMDB directly, bypassing AIOMetadata!
-            response = requests.get(tmdb_url, headers=HEADERS, timeout=TIMEOUT_LIMIT)
+            response = requests.get(tmdb_url, headers=HEADERS, params={"api_key": TMDB_API_KEY}, timeout=TIMEOUT_LIMIT)
             response.raise_for_status() 
             items = response.json().get("results", [])
             log(f" -> Fetched {len(items)} items directly from TMDB.")
@@ -152,7 +163,6 @@ def main():
             continue
 
         for item in items:
-            # TMDB uses 'title' for movies and 'name' for TV shows
             title = item.get("title") or item.get("name", "Unknown")
             clean_title = sanitize_filename(title)
             tmdb_id = str(item.get("id"))

@@ -127,15 +127,22 @@ def main():
     with open(target_file, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
-    # Extract the configuration object to build the personalized URL
+    # Extract the configuration object
     config_obj = manifest.get("config", {})
     if not config_obj and isinstance(manifest, dict):
         config_obj = manifest
 
-    # Convert settings to a URL-safe string
-    encoded_config = urllib.parse.quote(json.dumps(config_obj))
+    # --- THE FIX ---
+    # Create a copy of the config specifically for the URL, and delete the giant catalogs list from it!
+    url_config = config_obj.copy()
+    if "catalogs" in url_config:
+        del url_config["catalogs"]
 
-    # Handle finding the catalogs
+    # Compress the remaining settings (no spaces) into a URL-safe string
+    encoded_config = urllib.parse.quote(json.dumps(url_config, separators=(',', ':')))
+    # ---------------
+
+    # Handle finding the actual catalogs for our loop
     if isinstance(manifest, list):
         catalogs = manifest
     else:
@@ -155,13 +162,13 @@ def main():
         os.makedirs(dir_logo_cards, exist_ok=True)
         os.makedirs(dir_dynamic, exist_ok=True)
         
-        # Build the personalized Stremio API endpoint using your encoded config
+        # Build the personalized Stremio API endpoint using your lightweight encoded config
         catalog_url = f"https://aiometadata.strem.fun/{encoded_config}/catalog/{catalog['type']}/{catalog['id']}.json"
         log(f"\nProcessing Catalog: {raw_name}")
         
         try:
             response = requests.get(catalog_url, timeout=TIMEOUT_LIMIT)
-            response.raise_for_status() # This will catch 404s and 500s immediately
+            response.raise_for_status() 
             items = response.json().get("metas", [])
             log(f" -> Catalog contains {len(items)} items.")
         except Exception as e:

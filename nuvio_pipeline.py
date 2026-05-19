@@ -111,18 +111,32 @@ def main():
         log("[CRITICAL] Missing API Keys. Verification failed.")
         return
 
-    # NEW LOGIC: Read from local file instead of URL
-    manifest_path = "AIOMetadata.json"
-    if not os.path.exists(manifest_path):
-        log(f"[CRITICAL] Could not find {manifest_path} in the repository. Please upload it.")
+    # 1. Check multiple locations for the file
+    target_file = None
+    if os.path.exists("AIOMetadata.json"):
+        target_file = "AIOMetadata.json"
+    elif os.path.exists("templates/AIOMetadata.json"):
+        target_file = "templates/AIOMetadata.json"
+        
+    if not target_file:
+        log("[CRITICAL] Could not find AIOMetadata.json in the root OR in the templates folder. Please upload it.")
         return
 
-    log(f"Reading local {manifest_path}...")
-    with open(manifest_path, 'r', encoding='utf-8') as f:
+    log(f"Reading local {target_file}...")
+    with open(target_file, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
-    catalogs = manifest.get("catalogs", [])
+    # 2. Handle both exported raw lists and Stremio dictionary formats
+    if isinstance(manifest, list):
+        catalogs = manifest
+    else:
+        catalogs = manifest.get("catalogs", [])
+        
     log(f"Found {len(catalogs)} catalogs in your file.")
+
+    if len(catalogs) == 0:
+        log("[WARNING] The file was read successfully, but no catalogs were found inside it.")
+        return
 
     for catalog in catalogs:
         raw_name = catalog.get("name", "Unknown_Catalog")

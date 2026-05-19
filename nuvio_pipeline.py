@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import requests
+import urllib.parse
 import subprocess
 from PIL import Image
 
@@ -17,7 +18,7 @@ HEADERS = {
     "Authorization": f"Bearer {TMDB_API_KEY}"
 }
 
-TIMEOUT_LIMIT = 15
+TIMEOUT_LIMIT = 20
 
 def log(message):
     print(message, flush=True)
@@ -49,7 +50,7 @@ def resolve_to_tmdb_id(meta_item):
             results = response.get("movie_results", []) + response.get("tv_results", [])
             if results:
                 return str(results[0]["id"])
-        except requests.exceptions.RequestException:
+        except Exception:
             return None
             
     year = meta_item.get("releaseInfo", "")
@@ -61,7 +62,7 @@ def resolve_to_tmdb_id(meta_item):
         results = search_response.get("results", [])
         if results:
             return str(results[0]["id"])
-    except requests.exceptions.RequestException:
+    except Exception:
         pass
         
     return None
@@ -81,7 +82,7 @@ def fetch_assets(tmdb_id, type_str):
         poster_url = f"https://image.tmdb.org/t/p/original{posters[0]['file_path']}"
         with open(poster_path, 'wb') as f:
             f.write(requests.get(poster_url, timeout=TIMEOUT_LIMIT).content)
-    except requests.exceptions.RequestException:
+    except Exception:
         return None, None
         
     # Fetch Logo
@@ -97,7 +98,7 @@ def fetch_assets(tmdb_id, type_str):
         logo_url = logos[0]["url"]
         with open(logo_path, 'wb') as f:
             f.write(requests.get(logo_url, timeout=TIMEOUT_LIMIT).content)
-    except requests.exceptions.RequestException:
+    except Exception:
         if os.path.exists(poster_path): os.remove(poster_path)
         return None, None
         
@@ -119,28 +120,31 @@ def main():
         target_file = "templates/AIOMetadata.json"
         
     if not target_file:
-        log("[CRITICAL] Could not find AIOMetadata.json in the root OR in the templates folder. Please upload it.")
+        log("[CRITICAL] Could not find AIOMetadata.json. Please upload it.")
         return
 
     log(f"Reading local {target_file}...")
     with open(target_file, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
 
-   # 2. Handle both exported raw lists and Stremio dictionary formats
+    # Extract the configuration object to build the personalized URL
+    config_obj = manifest.get("config", {})
+    if not config_obj and isinstance(manifest, dict):
+        config_obj = manifest
+
+    # Convert settings to a URL-safe string
+    encoded_config = urllib.parse.quote(json.dumps(config_obj))
+
+    # Handle finding the catalogs
     if isinstance(manifest, list):
         catalogs = manifest
     else:
-        # Check if catalogs are at the root level OR hidden inside a 'config' section
         if "config" in manifest and "catalogs" in manifest["config"]:
             catalogs = manifest["config"]["catalogs"]
         else:
             catalogs = manifest.get("catalogs", [])
         
     log(f"Found {len(catalogs)} catalogs in your file.")
-
-    if len(catalogs) == 0:
-        log("[WARNING] The file was read successfully, but no catalogs were found inside it.")
-        return
 
     for catalog in catalogs:
         raw_name = catalog.get("name", "Unknown_Catalog")
@@ -151,15 +155,17 @@ def main():
         os.makedirs(dir_logo_cards, exist_ok=True)
         os.makedirs(dir_dynamic, exist_ok=True)
         
-        # Build the Stremio public API endpoint for this specific catalog ID
-        catalog_url = f"https://aiometadata.strem.fun/catalog/{catalog['type']}/{catalog['id']}.json"
+        # Build the personalized Stremio API endpoint using your encoded config
+        catalog_url = f"https://aiometadata.strem.fun/{encoded_config}/catalog/{catalog['type']}/{catalog['id']}.json"
         log(f"\nProcessing Catalog: {raw_name}")
         
         try:
-            items = requests.get(catalog_url, timeout=TIMEOUT_LIMIT).json().get("metas", [])
+            response = requests.get(catalog_url, timeout=TIMEOUT_LIMIT)
+            response.raise_for_status() # This will catch 404s and 500s immediately
+            items = response.json().get("metas", [])
             log(f" -> Catalog contains {len(items)} items.")
-        except requests.exceptions.RequestException:
-            log(f" [WARNING] Could not fetch movies for {raw_name}. Skipping.")
+        except Exception as e:
+            log(f"   [WARNING] Could not fetch movies for {raw_name}. Error: {e}")
             continue
 
         for item in items:
@@ -186,14 +192,12 @@ def main():
                 continue
                 
             if not os.path.exists(out_logo_jpg):
-                log(f"   -> Launching logo_cards.py...")
                 try:
                     subprocess.run(["python", "logo_cards.py", "--poster", poster_file, "--logo", logo_file, "--output", out_logo_jpg, "--skip-logos"], check=True, timeout=60)
                     if os.path.exists(out_logo_jpg): convert_to_webp(out_logo_jpg, out_logo_webp)
                 except: pass
 
             if not os.path.exists(out_dynamic_jpg):
-                log(f"   -> Launching backdrop_T2.py...")
                 try:
                     subprocess.run(["python", "backdrop_T2.py", "--poster", poster_file, "--logo", logo_file, "--output", out_dynamic_jpg, "--skip-logos"], check=True, timeout=60)
                     if os.path.exists(out_dynamic_jpg): convert_to_webp(out_dynamic_jpg, out_dynamic_webp)

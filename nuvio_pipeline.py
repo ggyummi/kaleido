@@ -185,15 +185,20 @@ def main():
                 
             if not os.path.exists(out_logo_jpg):
                 try:
-                    subprocess.run(["python", "logo_cards.py", "--poster", poster_file, "--logo", logo_file, "--output", out_logo_jpg, "--skip-logos"], check=True, timeout=60)
+                    # Smartly check if the tool is in the scripts folder or the root folder
+                    logo_tool = "scripts/logo_cards.py" if os.path.exists("scripts/logo_cards.py") else "logo_cards.py"
+                    subprocess.run(["python", logo_tool, "--poster", poster_file, "--logo", logo_file, "--output", out_logo_jpg, "--skip-logos"], check=True, timeout=60)
                     if os.path.exists(out_logo_jpg): convert_to_webp(out_logo_jpg, out_logo_webp)
-                except: pass
+                except Exception as e:
+                    log(f"   [WARNING] Failed to run logo_cards.py: {e}")
 
             if not os.path.exists(out_dynamic_jpg):
                 try:
-                    subprocess.run(["python", "backdrop_T2.py", "--poster", poster_file, "--logo", logo_file, "--output", out_dynamic_jpg, "--skip-logos"], check=True, timeout=60)
+                    backdrop_tool = "scripts/backdrop_T2.py" if os.path.exists("scripts/backdrop_T2.py") else "backdrop_T2.py"
+                    subprocess.run(["python", backdrop_tool, "--poster", poster_file, "--logo", logo_file, "--output", out_dynamic_jpg, "--skip-logos"], check=True, timeout=60)
                     if os.path.exists(out_dynamic_jpg): convert_to_webp(out_dynamic_jpg, out_dynamic_webp)
-                except: pass
+                except Exception as e:
+                    log(f"   [WARNING] Failed to run backdrop_T2.py: {e}")
 
             if os.path.exists(poster_file): os.remove(poster_file)
             if os.path.exists(logo_file): os.remove(logo_file)

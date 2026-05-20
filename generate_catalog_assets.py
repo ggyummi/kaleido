@@ -1239,6 +1239,189 @@ def render_t1_backdrop(
     return _t1_apply_gradient(dof, accent)
 
 
+# ─── T2 Backdrop Engine ──────────────────────────────────────────────────────────────────────
+#
+# Rendering functions ported from bramst0ne/prism-wallpapers:
+#   backdrop_T2.py      → mixed portrait+landscape columns, perspective warp + −10° rotation
+#   backdrop_T2_flat.py → same column layout, tilt only, no perspective warp
+#
+# TMDB/MDBList fetching, CLI argument parsing, and file saving are intentionally omitted.
+# Output resolution: 1920×1080 only (no 4K).
+# Perspective warp, DOF blur, and gradient reuse the shared _t1_* helpers.
+
+
+class _T2Cfg:
+    """Configuration bundle for one T2 render pass (tilt or flat)."""
+
+    __slots__ = (
+        "tilt_deg", "offset_x", "offset_y",
+        "landscape_w", "portrait_w", "gap", "card_radius",
+        "col_pattern", "col_stagger", "random_aspect_chance",
+        "fade_left", "fade_right",
+        "pov_x", "pov_y", "warp_strength",
+        "dof_blur_max", "dof_focus_x", "dof_focus_y", "dof_falloff",
+        "focus_x", "focus_y", "focus_radius",
+    )
+
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+
+
+# backdrop_T2.py — mixed P+L columns, full perspective warp + −10° tilt
+_T2_TILT_CFG = _T2Cfg(
+    tilt_deg=-10,     offset_x=335,         offset_y=100,
+    landscape_w=300,  portrait_w=200,       gap=8,            card_radius=8,
+    col_pattern=["L", "P", "L", "P", "L", "P", "L", "P", "L"],
+    col_stagger=0.35, random_aspect_chance=0.35,
+    fade_left=0.30,   fade_right=1.00,
+    pov_x=1.0,        pov_y=-1.0,           warp_strength=0.37,
+    dof_blur_max=10.0, dof_focus_x=0.75,   dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.75,     focus_y=0.25,         focus_radius=0.30,
+)
+
+# backdrop_T2_flat.py — mixed P+L columns, −10° tilt only, perspective warp disabled
+_T2_FLAT_CFG = _T2Cfg(
+    tilt_deg=-10,     offset_x=335,         offset_y=100,
+    landscape_w=300,  portrait_w=200,       gap=8,            card_radius=8,
+    col_pattern=["L", "P", "L", "P", "L", "P", "L", "P", "L"],
+    col_stagger=0.35, random_aspect_chance=0.35,
+    fade_left=0.30,   fade_right=1.00,
+    pov_x=0.0,        pov_y=0.0,            warp_strength=0.0,
+    dof_blur_max=10.0, dof_focus_x=0.75,   dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.50,     focus_y=0.0,          focus_radius=0.30,
+)
+
+
+def _t2_pick_next(
+    items: "list[dict]",
+    placed_ids: "set[int]",
+    repeat_state: "dict",
+) -> "dict":
+    """Return the next unused item; once all are placed, cycle from the beginning."""
+    for item in items:
+        if item["id"] not in placed_ids:
+            placed_ids.add(item["id"])
+            return item
+    idx = repeat_state.get("idx", 0)
+    chosen = items[idx % len(items)]
+    repeat_state["idx"] = idx + 1
+    return chosen
+
+
+def _t2_build_layout(
+    items: "list[dict]",
+    canvas_w: int,
+    canvas_h: int,
+    scale: float,
+    cfg: "_T2Cfg",
+) -> "tuple[Image.Image, int, int]":
+    gap  = int(cfg.gap * scale)
+    lw   = int(cfg.landscape_w * scale)
+    pw   = int(cfg.portrait_w  * scale)
+
+    max_th     = int(pw * 3 / 2)
+    stagger_px = int(canvas_h * cfg.col_stagger)
+    bleed_x    = (max(lw, pw) + gap) * 3
+    bleed_y    = max_th * 2 + stagger_px + gap * 6
+
+    over_w = canvas_w + bleed_x * 2
+    over_h = canvas_h + bleed_y * 2
+    ox     = bleed_x
+    oy     = bleed_y
+    canvas_img = Image.new("RGBA", (over_w, over_h), (10, 12, 16, 255))
+
+    pattern_len = len(cfg.col_pattern)
+    pattern_idx = 0
+    cur_x       = -bleed_x
+    columns: list[dict] = []
+    while cur_x < canvas_w + bleed_x:
+        col_type = cfg.col_pattern[pattern_idx % pattern_len]
+        base_w   = lw if col_type == "L" else pw
+        if cfg.pov_x != 0.0:
+            norm_x    = (cur_x + base_w * 0.5) / canvas_w
+            norm_dist = max(0.0, min(1.0, norm_x))
+            sf        = max(0.5, 1.0 - abs(cfg.pov_x) * norm_dist * 0.15)
+        else:
+            sf = 1.0
+        col_w = max(50, int(base_w * sf))
+        columns.append({
+            "x":       cur_x + ox,
+            "w":       col_w,
+            "type":    col_type,
+            "stagger": pattern_idx % 2 == 1,
+        })
+        cur_x       += col_w + gap
+        pattern_idx += 1
+
+    placed_ids: set[int]  = set()
+    rng                   = random.Random(42)
+    items_shuf            = list(items)
+    rng.shuffle(items_shuf)
+    repeat_state: dict = {"idx": 0}
+
+    for col in columns:
+        col_x    = col["x"]
+        col_w    = col["w"]
+        col_type = col["type"]
+        start_y  = (-bleed_y + (stagger_px if col["stagger"] else 0)) + oy
+        y        = start_y
+
+        while y < over_h:
+            use_landscape = (col_type == "L")
+            if rng.random() < cfg.random_aspect_chance:
+                use_landscape = not use_landscape
+            th = max(4, int(col_w * 9 / 16) if use_landscape else int(col_w * 3 / 2))
+
+            screen_x = col_x - ox + col_w * 0.5
+            norm_x   = screen_x / canvas_w
+            depth    = max(0.0, min(1.0, norm_x))
+            opacity  = cfg.fade_left + (cfg.fade_right - cfg.fade_left) * depth
+
+            item = _t2_pick_next(items_shuf, placed_ids, repeat_state)
+            tile = _t1_make_tile(item["img"], col_w, th, opacity, cfg, logo=item.get("logo"))
+            canvas_img.paste(tile, (int(col_x), int(y)), tile)
+            y += th + gap
+
+    return canvas_img, ox, oy
+
+
+def render_t2_backdrop(
+    images:  "list[Image.Image]",
+    slug:    str,
+    variant: str,
+    logos:   "list[Image.Image | None] | None" = None,
+) -> Image.Image:
+    """
+    Render a 1920×1080 T2-style backdrop from pre-fetched PIL Images.
+    variant='tilt' → mixed portrait+landscape columns, perspective warp + −10° rotation.
+    variant='flat' → same column layout, −10° tilt only, no perspective warp.
+    Perspective warp, DOF, and gradient are handled by the shared T1 helpers.
+    Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
+    """
+    cfg    = _T2_TILT_CFG if variant == "tilt" else _T2_FLAT_CFG
+    accent = default_accent_for_label(slug)
+
+    n          = len(images)
+    eff_logos  = list(logos) if logos else []
+    eff_logos += [None] * max(0, n - len(eff_logos))
+    pairs      = list(zip(images, eff_logos[:n]))
+
+    minimum = 4
+    if 0 < len(pairs) < minimum:
+        for img, logo in itertools.cycle(pairs):
+            if len(pairs) >= minimum:
+                break
+            pairs.append((img.copy(), logo))
+
+    items = [{"id": i, "img": img, "logo": logo} for i, (img, logo) in enumerate(pairs)]
+
+    over, ox, oy = _t2_build_layout(items, CANVAS_W, CANVAS_H, scale=1.0, cfg=cfg)
+    warped       = _t1_perspective_warp(over, ox, oy, CANVAS_W, CANVAS_H, cfg)
+    dof          = _t1_apply_dof(warped, scale=1.0, cfg=cfg)
+    return _t1_apply_gradient(dof, accent)
+
+
 # ─── Hero Banner (focused / cover) ──────────────────────────────────────────────────────────────────────────────────
 
 def _find_font_path() -> str | None:
@@ -1408,8 +1591,10 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
     if mode in ("all", "backdrop"):
         for ext in (".jpg", ".webp"):
             checks.append(base / "backdrop" / f"{slug}{ext}")
-            checks.append(base / "backdrop" / f"{slug}_tilt{ext}")
-            checks.append(base / "backdrop" / f"{slug}_flat{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t1_tilt{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t1_flat{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t2_tilt{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t2_flat{ext}")
 
     if mode in ("all", "covers"):
         for t in ("focused", "cover"):
@@ -1455,13 +1640,23 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
 
         log.info("  Rendering T1 tilt backdrop …")
         t1_tilt = render_t1_backdrop(backdrops, slug, "tilt", logos=logos)
-        save_dual(t1_tilt, base / "backdrop" / f"{slug}_tilt")
-        log.info("  ✓  backdrop/%s_tilt.jpg + .webp", slug)
+        save_dual(t1_tilt, base / "backdrop" / f"{slug}_t1_tilt")
+        log.info("  ✓  backdrop/%s_t1_tilt.jpg + .webp", slug)
 
         log.info("  Rendering T1 flat backdrop …")
         t1_flat = render_t1_backdrop(backdrops, slug, "flat", logos=logos)
-        save_dual(t1_flat, base / "backdrop" / f"{slug}_flat")
-        log.info("  ✓  backdrop/%s_flat.jpg + .webp", slug)
+        save_dual(t1_flat, base / "backdrop" / f"{slug}_t1_flat")
+        log.info("  ✓  backdrop/%s_t1_flat.jpg + .webp", slug)
+
+        log.info("  Rendering T2 tilt backdrop …")
+        t2_tilt = render_t2_backdrop(backdrops, slug, "tilt", logos=logos)
+        save_dual(t2_tilt, base / "backdrop" / f"{slug}_t2_tilt")
+        log.info("  ✓  backdrop/%s_t2_tilt.jpg + .webp", slug)
+
+        log.info("  Rendering T2 flat backdrop …")
+        t2_flat = render_t2_backdrop(backdrops, slug, "flat", logos=logos)
+        save_dual(t2_flat, base / "backdrop" / f"{slug}_t2_flat")
+        log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
         # ALWAYS fetch a fresh textless backdrop (the most recently added /

@@ -12,12 +12,16 @@ For each catalog defined in `nuvio-collections.json`, the pipeline generates fiv
 collections/
 └── {folder}/
     ├── backdrop/
-    │   ├── {catalog}.jpg          ← Prism 3D tilted-grid collage (1920×1080)
+    │   ├── {catalog}.jpg           ← Prism 3D tilted-grid collage (1920×1080)
     │   ├── {catalog}.webp
-    │   ├── {catalog}_tilt.jpg     ← T1 perspective-warp + −10° rotation
-    │   ├── {catalog}_tilt.webp
-    │   ├── {catalog}_flat.jpg     ← T1 tilt-only, no perspective warp
-    │   └── {catalog}_flat.webp
+    │   ├── {catalog}_t1_tilt.jpg   ← T1 perspective-warp + −10° rotation
+    │   ├── {catalog}_t1_tilt.webp
+    │   ├── {catalog}_t1_flat.jpg   ← T1 tilt-only, no perspective warp
+    │   ├── {catalog}_t1_flat.webp
+    │   ├── {catalog}_t2_tilt.jpg   ← T2 mixed P+L columns, perspective-warp + −10° rotation
+    │   ├── {catalog}_t2_tilt.webp
+    │   ├── {catalog}_t2_flat.jpg   ← T2 mixed P+L columns, tilt-only, no perspective warp
+    │   └── {catalog}_t2_flat.webp
     ├── focused/
     │   ├── {catalog}.jpg          ← hero banner + glow text — selected/hover state
     │   └── {catalog}.webp
@@ -33,9 +37,9 @@ The visual difference between `focused/` and `cover/` creates the pop effect whe
 
 ## Asset rendering
 
-### Backdrop — three renders per catalog
+### Backdrop — five renders per catalog
 
-All three backdrop variants reuse the same pool of images fetched from `catalogSources` — no additional HTTP requests are made.
+All five backdrop variants reuse the same pool of images fetched from `catalogSources` — no additional HTTP requests are made.
 
 #### Prism tilted-grid (`{catalog}.jpg`)
 
@@ -47,7 +51,7 @@ Adapted from [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3r
 - Four-pass gradient overlay: dark left edge, dark bottom vignette, dark bottom-left corner, accent-coloured top-right glow
 - Accent colour is deterministic per catalog name (HSV, seed derived from label characters)
 
-#### T1 perspective-warp (`{catalog}_tilt.jpg`)
+#### T1 perspective-warp (`{catalog}_t1_tilt.jpg`)
 
 Ported from [bramst0ne/prism-wallpapers](https://github.com/bramst0ne/prism-wallpapers) `backdrop_T1.py`:
 
@@ -57,9 +61,24 @@ Ported from [bramst0ne/prism-wallpapers](https://github.com/bramst0ne/prism-wall
 - Depth-of-field blur keyed to `(0.75, 0.25)` focal point
 - Left-fade opacity gradient + dark bottom vignette + accent glow
 
-#### T1 flat-tilt (`{catalog}_flat.jpg`)
+#### T1 flat-tilt (`{catalog}_t1_flat.jpg`)
 
 Ported from `backdrop_T1_flat.py` — identical to the tilt variant but with perspective warp disabled (`POV_X=0, POV_Y=0, WARP_STRENGTH=0`) and focal centre shifted to `(0.75, 0.50)`. Produces a cleaner, flatter look suitable for UI contexts where strong depth is distracting.
+
+#### T2 perspective-warp (`{catalog}_t2_tilt.jpg`)
+
+Ported from `backdrop_T2.py`:
+
+- Mixed portrait (2:3) and landscape (16:9) column grid following `COL_PATTERN = [L, P, L, P, L, P, L, P, L]`
+- `RANDOM_ASPECT_CHANCE=0.35` randomly flips individual tile aspect ratios for visual variety
+- `COL_STAGGER=0.35` vertically offsets alternating columns by 35 % of canvas height
+- Column widths scale slightly with perspective distance (`POV_X` factor)
+- Full 3D perspective warp: `POV_X=1.0, POV_Y=-1.0, WARP_STRENGTH=0.37`
+- −10° canvas rotation, depth-of-field blur, and accent glow (shared with T1)
+
+#### T2 flat-tilt (`{catalog}_t2_flat.jpg`)
+
+Ported from `backdrop_T2_flat.py` — identical to the T2 tilt variant but with perspective warp disabled (`POV_X=0, POV_Y=0, WARP_STRENGTH=0`) and focal centre shifted to `(0.50, 0.0)`.
 
 ### Focused / Cover — hero banner
 

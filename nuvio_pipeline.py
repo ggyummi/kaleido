@@ -160,7 +160,7 @@ def load_catalogs(filepath: str) -> list[dict]:
 # Catalogs sourced from services that require live auth tokens we don't have.
 # These are skipped with an explicit message rather than silently faked.
 # (Bug 4 fix)
-SKIP_SOURCES = {"trakt", "simkl"}
+AUTH_SOURCES = {"trakt", "simkl"}
 
 # Source strings that route to an anime-flavoured TMDb discover call
 ANIME_SOURCES = {"kitsu", "mal", "anilist"}
@@ -185,14 +185,13 @@ def resolve_catalog_items(catalog: dict) -> list[dict]:
     name        = catalog.get("name", catalog_id)
 
     # ── 1. Skip auth-gated sources ────────────────────────────────────────────
-    if source in SKIP_SOURCES:
-        log.warning(
-            "  Skipping catalog '%s' (source='%s' requires live auth tokens "
-            "not available in this workflow). Re-export with a Trakt/Simkl "
-            "watchlist snapshot or connect a live manifest URL to include it.",
-            name, source,
-        )
-        return []
+    if source in AUTH_SOURCES:
+    log.info(
+        "  '%s': source='%s' requires live auth — no tokens in this "
+        "workflow, falling back to TMDb popular as substitute.",
+        name, source,
+    )
+    # no return — falls through to TMDb popular at step 4
 
     # ── 2. TMDb Discover (params block present in metadata) ───────────────────
     metadata = catalog.get("metadata", {})

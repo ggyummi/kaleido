@@ -142,42 +142,59 @@ def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
 # Series  → hdtvlogo    (needs TVDB ID, resolved via TMDB /find + /external_ids)
 # Any logo whose lang != "en" is skipped entirely.
 
-def _resolve_fanart_id(imdb_id: str, media_type: str) -> "tuple[str, str] | None":
+def _resolve_fanart_id(item_id: str, media_type: str) -> "tuple[str, str] | None":
     """
-    Convert an IMDb ID (tt…) to the ID + endpoint type Fanart.tv needs.
-    Returns (fanart_id, "movies" | "tv") or None on failure.
-    Requires TMDB_API_KEY for the TMDB lookup calls.
+    Convert an item ID to the (id, endpoint_type) Fanart.tv needs.
+    Handles IMDb (tt…) and TMDB (tmdb:…) prefixes. Anime IDs (kitsu:, mal:) are skipped.
     """
-    if not TMDB_API_KEY or not imdb_id or not imdb_id.startswith("tt"):
+    if not item_id or not TMDB_API_KEY:
         return None
 
-    find_data = safe_get(
-        f"{TMDB_BASE}/find/{imdb_id}",
-        {"api_key": TMDB_API_KEY, "external_source": "imdb_id"},
-    )
-    if not find_data:
-        return None
+    # Path A: TMDB-prefixed ID — no lookup needed for movies
+    if item_id.startswith("tmdb:"):
+        tmdb_id = item_id.replace("tmdb:", "").strip()
+        if not tmdb_id:
+            return None
+        if media_type == "movie":
+            return tmdb_id, "movies"
+        # Series: Fanart wants TVDB ID, fetch from TMDB
+        ext = safe_get(
+            f"{TMDB_BASE}/tv/{tmdb_id}/external_ids",
+            {"api_key": TMDB_API_KEY},
+        )
+        if ext and ext.get("tvdb_id"):
+            return str(ext["tvdb_id"]), "tv"
+        return tmdb_id, "tv"
 
-    if media_type == "movie":
-        results = find_data.get("movie_results", [])
-        if results:
-            return str(results[0]["id"]), "movies"
+    # Path B: IMDb-prefixed ID — resolve via TMDB /find
+    if item_id.startswith("tt"):
+        find_data = safe_get(
+            f"{TMDB_BASE}/find/{item_id}",
+            {"api_key": TMDB_API_KEY, "external_source": "imdb_id"},
+        )
+        if not find_data:
+            return None
 
-    else:  # series / anime
+        if media_type == "movie":
+            results = find_data.get("movie_results", [])
+            if results:
+                return str(results[0]["id"]), "movies"
+            return None
+
+        # Series
         results = find_data.get("tv_results", [])
         if not results:
             return None
         tmdb_tv_id = results[0]["id"]
-        # Fanart.tv TV endpoint uses TVDB IDs — fetch them from TMDB
         ext = safe_get(
             f"{TMDB_BASE}/tv/{tmdb_tv_id}/external_ids",
             {"api_key": TMDB_API_KEY},
         )
         if ext and ext.get("tvdb_id"):
             return str(ext["tvdb_id"]), "tv"
-        # Last resort: try the TMDB ID directly (Fanart accepts it for some titles)
         return str(tmdb_tv_id), "tv"
 
+    # Unsupported ID format (kitsu:, mal:, anidb:, etc.)
     return None
 
 
@@ -423,17 +440,16 @@ def fetch_all_backdrops(
                 # Fetch English-only Fanart logo (skips if no EN logo exists)
                 logo: "Image.Image | None" = None
                 if FANART_API_KEY:
-                    imdb_id    = meta.get("id", "")
-                    src_type   = meta.get("_fanart_type", "movie")
-                    logo       = fetch_fanart_logo(imdb_id, src_type)
-                    logo_label = "✓ logo" if logo else "– no EN logo"
-                    log.info("     %s %s", logo_label, name)
-
-                backdrops.append(img)
-                logos.append(logo)
-                log.info("  ✓ %s", name)
-            else:
-                log.warning("  ✗ No image — %s", name)
+                    item_id  = meta.get("id", "")
+                    src_type = meta.get("_fanart_type", "movie")
+                    logo     = fetch_fanart_logo(item_id, src_type)
+                    if logo:
+                        log.info("     ✓ EN logo — %s", name)
+                    else:
+                        log.info("     – no EN logo (id=%s, type=%s) — %s",
+                                 item_id, src_type, name)
+                else:
+                    log.warning("     FANART_API_KEY not set — skipping logo overlay")
 
         return backdrops, logos, top
 

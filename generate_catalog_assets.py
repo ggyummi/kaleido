@@ -37,7 +37,7 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
+# ─── Logging ─────────────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +47,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("nuvio.catalog")
 
-# ─── Global Config ───────────────────────────────────────────────────────────────
+# ─── Global Config ─────────────────────────────────────────────────────────────────────
 
 TMDB_API_KEY    = os.environ.get("TMDB_API_KEY", "")
 TMDB_BASE       = "https://api.themoviedb.org/3"
@@ -72,7 +72,7 @@ MAX_TILES = 40
 TIMEOUT    = 20      # seconds per HTTP call
 RATE_SLEEP = 0.25    # polite rate limiting between image downloads
 
-# ─── Prism Tile Geometry Constants ─────────────────────────────────────────────────────
+# ─── Prism Tile Geometry Constants ────────────────────────────────────────────────────────────
 # Source: luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
 
 CARD_RADIUS = 9    # rounded-corner radius (px at 1x tile size)
@@ -86,7 +86,7 @@ STAGGER     = 0.5  # per-row horizontal offset as a fraction of (tile+gap)
 FOCUS_X     = 0.5  # horizontal focal point fraction (0=left, 1=right)
 FOCUS_Y     = 0.53 # vertical   focal point fraction (0=top,  1=bottom)
 
-# ─── Font Candidates ──────────────────────────────────────────────────────────────────
+# ─── Font Candidates ─────────────────────────────────────────────────────────────────────────────
 
 _FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
@@ -98,14 +98,14 @@ _FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
-# ─── Environment Validation ─────────────────────────────────────────────────────────
+# ─── Environment Validation ─────────────────────────────────────────────────────────────────
 
 def validate_env() -> None:
     if not AIOMETADATA_URL and not TMDB_API_KEY:
         log.warning(
             "Neither AIOMETADATA_URL nor TMDB_API_KEY is set. "
-            "Catalog images will be fetched from the public Cinemeta addon "
-            "(generic top content only — provider-specific catalogs will not be accurate)."
+            "Catalogs with catalogSources will produce no images. "
+            "Set AIOMETADATA_URL to your AIOMetadata instance URL."
         )
     elif not AIOMETADATA_URL:
         log.info(
@@ -113,7 +113,7 @@ def validate_env() -> None:
             "to TMDb Discover (TMDB_API_KEY present)."
         )
 
-# ─── Manifest Discovery ────────────────────────────────────────────────────────────
+# ─── Manifest Discovery ────────────────────────────────────────────────────────────────────
 
 def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
     """
@@ -135,7 +135,7 @@ def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
     log.info("Manifest loaded — %d catalog ID(s) available.", len(ids))
     return ids
 
-# ─── Fanart.tv Logo Fetching ───────────────────────────────────────────────────────
+# ─── Fanart.tv Logo Fetching ─────────────────────────────────────────────────────────────────────
 #
 # Fetches English-only title logo PNGs from Fanart.tv.
 # Movies  → hdmovielogo (needs TMDB ID, resolved via TMDB /find)
@@ -271,7 +271,7 @@ def composite_logo_on_tile(tile: Image.Image, logo: Image.Image) -> Image.Image:
     result.paste(logo_r, (logo_x, logo_y), logo_r)
     return result
 
-# ─── HTTP Helpers ──────────────────────────────────────────────────────────────────
+# ─── HTTP Helpers ──────────────────────────────────────────────────────────────────────────────
 
 def safe_get(url: str, params: dict | None = None, retries: int = 3) -> dict | None:
     for attempt in range(1, retries + 1):
@@ -282,6 +282,9 @@ def safe_get(url: str, params: dict | None = None, retries: int = 3) -> dict | N
                 log.warning("Rate-limited — waiting %ds …", wait)
                 time.sleep(wait)
                 continue
+            if 400 <= r.status_code < 500:
+                log.warning("HTTP %d for %s — not retrying.", r.status_code, url)
+                return None
             r.raise_for_status()
             return r.json()
         except requests.RequestException as exc:
@@ -299,7 +302,7 @@ def download_image(url: str) -> Image.Image | None:
         log.warning("Download failed (%s): %s", url, exc)
         return None
 
-# ─── JSON Parsing ────────────────────────────────────────────────────────────────────
+# ─── JSON Parsing ──────────────────────────────────────────────────────────────────────────────
 
 def load_catalogs(json_path: Path) -> list[dict]:
     log.info("Loading %s …", json_path)
@@ -327,16 +330,12 @@ def parse_collection_id(catalog_id: str) -> tuple[str, str] | None:
         return parts[1], parts[2]
     return None
 
-# ─── Stremio Catalog Fetching (primary, unauthenticated) ────────────────────────────
+# ─── Stremio Catalog Fetching (primary, unauthenticated) ──────────────────────────────────────────
 #
 # Calls {AIOMETADATA_URL}/catalog/{type}/{id}.json — a plain GET with no auth.
-# AIOMetadata handles any provider auth server-side.
-# Falls back to the public Cinemeta addon when AIOMETADATA_URL is not set.
-
-_CINEMETA_ID = {
-    "movie":  "top",
-    "series": "top",
-}
+# AIOMetadata handles any provider auth (Trakt, SIMKL, etc.) server-side;
+# those tokens are embedded in the user-specific AIOMETADATA_URL path.
+# On failure the catalog is skipped — no Cinemeta or any other fallback.
 
 
 def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
@@ -414,7 +413,7 @@ def fetch_all_backdrops(
     sources = get_catalog_sources(catalog)
 
     if sources:
-        # ── Stremio path: call addon endpoints, mix movies + series ──────────
+        # ── Stremio path: call addon endpoints, mix movies + series ──────────────────
         all_metas: list[dict] = []
         seen: set[str] = set()
         for src in sources:
@@ -430,12 +429,15 @@ def fetch_all_backdrops(
         backdrops: list[Image.Image] = []
         logos:     list["Image.Image | None"] = []
         top: Image.Image | None = None
+        if not FANART_API_KEY:
+            log.warning("FANART_API_KEY not set — skipping logo overlays for this catalog.")
         for meta in all_metas[:limit]:
             name = meta.get("name", meta.get("id", "?"))
             img  = backdrop_from_meta(meta)
             if img:
                 if top is None:
                     top = img
+                backdrops.append(img)
 
                 # Fetch English-only Fanart logo (skips if no EN logo exists)
                 logo: "Image.Image | None" = None
@@ -448,12 +450,11 @@ def fetch_all_backdrops(
                     else:
                         log.info("     – no EN logo (id=%s, type=%s) — %s",
                                  item_id, src_type, name)
-                else:
-                    log.warning("     FANART_API_KEY not set — skipping logo overlay")
+                logos.append(logo)
 
         return backdrops, logos, top
 
-    # ── TMDb fallback path (no catalogSources field) ─────────────────────────
+    # ── TMDb fallback path (no catalogSources field) ───────────────────────────────
     log.info("  No catalogSources — using TMDb resolver as fallback.")
     items     = resolve_items(catalog, limit)
     backdrops = []
@@ -470,7 +471,7 @@ def fetch_all_backdrops(
             log.warning("    ✗ No backdrop — %s", title)
     return backdrops, [None] * len(backdrops), top
 
-# ─── TMDb Item Resolution (fallback when catalogSources is absent) ─────────────────
+# ─── TMDb Item Resolution (fallback when catalogSources is absent) ─────────────────────
 
 _AUTH_SOURCES  = {"trakt", "simkl"}
 _ANIME_SOURCES = {"kitsu", "mal", "anilist"}
@@ -576,7 +577,7 @@ def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
         return download_image(f"{TMDB_IMG_BASE}/w1280{bp}")
     return None
 
-# ─── Prism Backdrop Engine ────────────────────────────────────────────────────────────────
+# ─── Prism Backdrop Engine ──────────────────────────────────────────────────────────────────────────────────
 #
 # Adapted from luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
 #
@@ -819,7 +820,7 @@ def render_prism_backdrop(
     )
     return apply_gradient(canvas, accent)
 
-# ─── Hero Banner (focused / cover) ────────────────────────────────────────────────────────────
+# ─── Hero Banner (focused / cover) ──────────────────────────────────────────────────────────────────────────────────
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -971,7 +972,7 @@ def render_hero_banner(
 
     return result.convert("RGB")
 
-# ─── I/O Helpers ──────────────────────────────────────────────────────────────────────────
+# ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 
 def save_dual(img: Image.Image, base_path: Path) -> None:
     """Write image as both .jpg and .webp next to each other."""
@@ -995,7 +996,7 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
         for ext in (".jpg", ".webp")
     )
 
-# ─── Per-catalog Orchestration ─────────────────────────────────────────────────────────────
+# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────────────────
 
 def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: str = "all") -> None:
     name = catalog.get("name") or catalog.get("title") or slug
@@ -1061,7 +1062,7 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
 
     log.info("  title/ initialized (manual assets preserved).")
 
-# ─── CLI & Entry Point ───────────────────────────────────────────────────────────────
+# ─── CLI & Entry Point ───────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(

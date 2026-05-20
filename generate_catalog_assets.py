@@ -113,6 +113,28 @@ def validate_env() -> None:
             "to TMDb Discover (TMDB_API_KEY present)."
         )
 
+# ─── Manifest Discovery ────────────────────────────────────────────────────────────
+
+def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
+    """
+    Fetch manifest.json from the AIOMetadata URL and return the set of all
+    valid catalog IDs declared in it. Used to validate catalogSources entries
+    before attempting to fetch them, so failures are caught early and loudly.
+    """
+    url = f"{base_url}/manifest.json"
+    log.info("Fetching manifest: %s", url)
+    data = safe_get(url)
+    if not data:
+        raise RuntimeError(
+            f"Could not fetch manifest from {url}. "
+            f"Check that AIOMETADATA_URL is set to your full user path "
+            f"(everything before /manifest.json in your Stremio install URL)."
+        )
+    catalogs = data.get("catalogs", [])
+    ids = {c["id"] for c in catalogs if "id" in c}
+    log.info("Manifest loaded — %d catalog ID(s) available.", len(ids))
+    return ids
+
 # ─── HTTP Helpers ──────────────────────────────────────────────────────────────────
 
 def safe_get(url: str, params: dict | None = None, retries: int = 3) -> dict | None:
@@ -198,18 +220,13 @@ def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
             metas = data.get("metas", [])
             log.info("    → %d meta(s)", len(metas))
             return metas
-        log.warning(
-            "    AIOMETADATA fetch failed for '%s/%s' — falling back to Cinemeta.",
-            media_type, catalog_id,
-        )
-
-    cinemeta_id = _CINEMETA_ID.get(media_type, "top")
-    url = f"{CINEMETA_URL}/catalog/{media_type}/{cinemeta_id}.json"
-    log.info("    GET %s (Cinemeta fallback)", url)
-    data  = safe_get(url)
-    metas = (data or {}).get("metas", [])
-    log.info("    → %d meta(s)", len(metas))
-    return metas
+log.error(
+        " AIOMetadata fetch failed for '%s/%s'. "
+        "Skipping — no fallback. Check your AIOMETADATA_URL secret and "
+        "confirm this catalog ID exists in your manifest.",
+        media_type, catalog_id,
+    )
+    return []
 
 
 def backdrop_from_meta(meta: dict) -> Image.Image | None:
@@ -905,6 +922,10 @@ Target examples:
 
     validate_env()
 
+    manifest_catalog_ids: set[str] = set()
+    if AIOMETADATA_URL:
+        manifest_catalog_ids = fetch_manifest_catalog_ids(AIOMETADATA_URL)
+  
     json_path = Path(args.json)
     if not json_path.exists():
         log.error("Config file not found: %s", json_path)
@@ -942,6 +963,17 @@ Target examples:
     )
 
     errors = 0
+    # Warn about any catalogSources IDs not found in the manifest
+    if manifest_catalog_ids:
+        for catalog, folder, slug in matched:
+            for src in get_catalog_sources(catalog):
+                cid = src.get("id") or src.get("catalogId", "")
+                if cid and cid not in manifest_catalog_ids:
+                    log.warning(
+                        "Catalog ID '%s' (in %s/%s) was NOT found in your "
+                        "AIOMetadata manifest — this source will return no images.",
+                        cid, folder, slug,
+                    )
     for catalog, folder, slug in matched:
         try:
             process_catalog(catalog, folder, slug, force=args.force, mode=args.mode)

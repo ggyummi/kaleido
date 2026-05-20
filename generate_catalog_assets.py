@@ -147,9 +147,16 @@ def load_catalogs(json_path: Path) -> list[dict]:
     log.info("Loading %s …", json_path)
     with open(json_path, encoding="utf-8") as fh:
         data = json.load(fh)
-    if isinstance(data, list):
-        return data
-    return data.get("catalogs", [])
+    items = data if isinstance(data, list) else data.get("catalogs", [])
+    # New nested format: top-level items are groups with a "folders" array.
+    # Unwrap so downstream code always sees a flat list of catalog entries.
+    flat: list[dict] = []
+    for item in items:
+        if "folders" in item:
+            flat.extend(item["folders"])
+        else:
+            flat.append(item)
+    return flat
 
 
 def parse_collection_id(catalog_id: str) -> tuple[str, str] | None:
@@ -216,8 +223,15 @@ def backdrop_from_meta(meta: dict) -> Image.Image | None:
 
 
 def get_catalog_sources(catalog: dict) -> list[dict]:
-    """Return the catalogSources (or sources) list; [] if absent."""
-    return catalog.get("catalogSources", catalog.get("sources", []))
+    """Return normalized catalog sources, guaranteed to have an 'id' key."""
+    raw = catalog.get("catalogSources", catalog.get("sources", []))
+    # New format uses catalogId instead of id — normalize for uniform downstream use.
+    result = []
+    for src in raw:
+        if "catalogId" in src and "id" not in src:
+            src = {**src, "id": src["catalogId"]}
+        result.append(src)
+    return result
 
 
 def fetch_all_backdrops(
@@ -774,7 +788,7 @@ def assets_exist(folder: str, slug: str) -> bool:
 # ─── Per-catalog Orchestration ─────────────────────────────────────────────────────────────
 
 def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
-    name = catalog.get("name", slug)
+    name = catalog.get("name") or catalog.get("title") or slug
     base = COLLECTIONS_DIR / folder   # collections/{folder}/
 
     log.info("")

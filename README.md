@@ -1,49 +1,78 @@
 # tiny-deluxe
 
-Automated pipeline that generates cinematic backdrops and catalog cover cards for [Nuvio Collections](https://github.com/luckynumb3rs/stremio-perfect-setup), served as a free static CDN via [jsDelivr](https://www.jsdelivr.com/). Images refresh automatically every week via GitHub Actions — zero manual maintenance once set up.
+Automated pipeline that generates cinematic catalog assets for [Nuvio TV](https://github.com/luckynumb3rs/stremio-perfect-setup), served as a free static CDN via [jsDelivr](https://www.jsdelivr.com/). Assets are regenerated on demand via GitHub Actions — zero manual maintenance once set up.
 
 ---
 
 ## What this repo produces
 
-For each catalog defined in your `AIOMetadata.json` export, the pipeline generates:
+For each catalog defined in `nuvio-collections.json`, the pipeline generates three asset types:
 
 ```
 collections/
-└── {Catalog_Name}_{type}/
+└── {folder}/
     ├── backdrop/
-    │   ├── {Movie_Title}.jpg    ← cinematic 1920×1080 per-item backdrop
-    │   └── {Movie_Title}.webp   ← WebP twin (smaller file size)
-    └── cards/
-        ├── {Catalog_Name}.jpg   ← catalog cover card  ← use this URL in Nuvio
-        └── {Catalog_Name}.webp  ← WebP twin           ← use this URL in Nuvio
+    │   ├── {catalog}.jpg    ← Prism 3D tilted-grid collage (1920×1080)
+    │   └── {catalog}.webp
+    ├── focused/
+    │   ├── {catalog}.jpg    ← hero banner + glow text — selected/hover state
+    │   └── {catalog}.webp
+    ├── cover/
+    │   ├── {catalog}.jpg    ← hero banner, no glow — idle/unfocused state
+    │   └── {catalog}.webp
+    └── title/               ← manual-only; automation never writes here
 ```
 
-The **catalog cover card** (`cards/`) is what you paste into your Nuvio Collections config. It uses the top-ranked item's TMDb backdrop as the background with your catalog name overlaid in bold text.
+The visual difference between `focused/` and `cover/` creates the pop effect when a user scrolls through a row in Nuvio TV.
+
+---
+
+## Asset rendering
+
+### Backdrop — Prism tilted-grid engine
+
+The backdrop is a 1920×1080 Prism-style 3D collage adapted from [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup):
+
+- A 10° clockwise-tilted staggered grid of rounded-corner image tiles
+- Up to 40 backdrop images fetched from all `catalogSources` (movies + series mixed into one pool, deduplicated)
+- Best images placed nearest the focal point (centre-screen, slightly below midline)
+- Four-pass gradient overlay: dark left edge, dark bottom vignette, dark bottom-left corner, accent-coloured top-right glow
+- Accent colour is deterministic per catalog name (HSV, seed derived from label characters)
+
+### Focused / Cover — hero banner
+
+- Top backdrop image from the catalog, cropped and scaled to fill 1920×1080
+- Left-side gradient (solid black → transparent at ~25% width)
+- Catalog name in **ALL CAPS** bold text, fitted to the left third, vertically centred
+- `focused`: text rendered with a dual-pass Gaussian outer glow
+- `cover`: plain text, no glow
 
 ---
 
 ## How the CDN works
 
-Files committed to this repo are instantly available at a permanent jsDelivr URL:
+Every file committed to this repo is instantly accessible at a permanent jsDelivr URL:
 
 ```
 https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/{path/to/file}
 ```
 
-The URL **never changes** — when the pipeline regenerates a file and pushes the new version, jsDelivr serves the updated image after the cache is purged. This means you paste the URL into Nuvio once and it stays fresh forever.
+The URL never changes. When the pipeline regenerates a file and pushes it, jsDelivr serves the updated image after the cache is purged (step 8 of the workflow). Paste the URL into Nuvio once — it stays fresh automatically.
 
 ### Example URLs
 
 ```
-# Catalog cover card (WebP — recommended for Nuvio)
-https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_movie/cards/Netflix_movie.webp
+# backdrop collage
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/backdrop/netflix.webp
 
-# Catalog cover card (JPEG fallback)
-https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_movie/cards/Netflix_movie.jpg
+# focused banner (selected state)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/focused/netflix.webp
+
+# cover banner (idle state)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/cover/netflix.webp
 ```
 
-After your first pipeline run, browse your repo's `collections/` folder to find the exact paths for each catalog. The folder name is derived from the catalog's display name and type (e.g. `🎬 Netflix` + `movie` → `Netflix_movie`).
+The `{folder}` and `{catalog}` path segments come directly from the catalog's `id` field in `nuvio-collections.json` — `collections.{folder}.{catalog}`.
 
 ---
 
@@ -51,122 +80,74 @@ After your first pipeline run, browse your repo's `collections/` folder to find 
 
 ### 1. Fork or clone this repo
 
-Rename it to whatever you like (this one is `tiny-deluxe`).
+Rename it to whatever you like.
 
-### 2. Export your AIOMetadata config
+### 2. Configure nuvio-collections.json
 
-Open your AIOMetadata app → export → download `AIOMetadata.json` → upload it to the root of this repo. The pipeline reads this file to know which catalogs to generate images for.
+The file already exists in the repo root. Each entry follows this schema:
+
+```json
+[
+  {
+    "id": "collections.{folder}.{catalog}",
+    "name": "Display Name",
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "your.stremio.addon.catalog.id" },
+      { "type": "series", "id": "your.stremio.addon.catalog.id" }
+    ]
+  }
+]
+```
+
+- `id` must be exactly three dot-separated segments starting with `collections.`
+- `{folder}` groups catalogs into subdirectories (e.g. `streaming`, `genres`, `discover`)
+- `{catalog}` becomes the filename (e.g. `netflix`, `action`, `trending`)
+- `catalogSources` lists one or more Stremio addon catalog endpoints to pull artwork from; movies and series are mixed into one backdrop pool
+
+The included `nuvio-collections.json` has 15 ready-to-use entries across `discover/`, `streaming/`, `genres/`, and `anime/`.
 
 ### 3. Add GitHub Secrets
 
 Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
 
-| Secret name | Where to get it | Required? |
+| Secret | Where to get it | Required? |
 |---|---|---|
-| `TMDB_API_KEY` | [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) | ✅ Yes |
-| `FANART_API_KEY` | [fanart.tv/get-an-api-key](https://fanart.tv/get-an-api-key/) | ✅ Yes |
-| `AIOMETADATA_URL` | Your AIOMetadata instance manifest URL | Optional |
+| `AIOMETADATA_URL` | Base URL of your AIOMetadata Stremio addon instance | Recommended |
+| `TMDB_API_KEY` | [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) | Optional fallback |
 
-`AIOMETADATA_URL` enables live catalog data for Trakt, Simkl, MAL, Kitsu, and PublicMetaDB catalogs. Without it, the pipeline reads `AIOMetadata.json` and uses TMDb-native endpoints only (works for Netflix, Disney+, Prime, etc.).
+`AIOMETADATA_URL` is the preferred source. The script calls `{AIOMETADATA_URL}/catalog/{type}/{id}.json` — a plain unauthenticated GET; no OAuth tokens are needed in the request. When absent, the script falls back to the public Cinemeta addon (generic popular content only — provider-specific catalogs like Netflix or Disney+ will not be accurate without it).
 
-### 4. Run the pipeline
+`TMDB_API_KEY` is used as a secondary fallback for entries that lack a `catalogSources` field.
 
-Go to **Actions → 🎬 Nuvio Backdrop & Card CDN Render → Run workflow**.
+### 4. Run the workflow
 
-The first run will take ~30–60 minutes depending on how many catalogs you have. Subsequent runs are faster because already-generated images are skipped (cache-aware).
+Go to **Actions → 🎨 Nuvio · Catalog Asset Generator → Run workflow**.
 
----
+Set the **Target** field and click the green button:
 
-## Triggers
-
-The pipeline runs automatically in three ways:
-
-| Trigger | When |
+| Target value | Effect |
 |---|---|
-| Manual | Actions tab → Run workflow button |
-| On file push | Whenever `AIOMetadata.json` is updated in the repo |
-| Scheduled | Every Monday at 03:00 UTC |
+| `all` | Every enabled catalog in `nuvio-collections.json` |
+| `streaming` | Every catalog inside the `streaming` folder |
+| `netflix` | Just the `netflix` catalog (any folder) |
 
-The weekly schedule keeps your backdrops fresh — new popular titles rotate in as your catalogs change.
-
----
-
-## Using the images in Nuvio Collections
-
-After your pipeline has run at least once, add a `nuvio-collections.json` file to the root of this repo. This file defines your Nuvio Collections entries with their CDN backdrop and card URLs.
-
-### nuvio-collections.json structure
-
-```json
-[
-  {
-    "id": "netflix-movies",
-    "name": "🎬 Netflix",
-    "type": "movie",
-    "backdropUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_movie/cards/Netflix_movie.webp",
-    "cardUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_movie/cards/Netflix_movie.webp"
-  },
-  {
-    "id": "netflix-series",
-    "name": "🎬 Netflix",
-    "type": "series",
-    "backdropUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_series/cards/Netflix_series.webp",
-    "cardUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/Netflix_series/cards/Netflix_series.webp"
-  }
-]
-```
-
-To find the exact folder names for your catalogs, browse `collections/` after a successful pipeline run — each subfolder name is the slug used in the URL.
+Leave **Force Regenerate** unchecked for faster incremental runs — already-generated assets are skipped automatically.
 
 ---
 
-## CDN cache purging
+## Workflow steps
 
-After the pipeline commits new images, the workflow automatically purges the jsDelivr cache for every updated file. This means Nuvio picks up fresh images within minutes instead of waiting up to 7 days for the CDN cache to expire on its own.
+The `generate-assets.yml` workflow runs the following steps:
 
-The purge script is at `collections/scripts/purge.py` and can also be run locally:
-
-```bash
-# Dry-run (see what would be purged, no requests made)
-python collections/scripts/purge.py --dry-run
-
-# Live purge
-python collections/scripts/purge.py
-```
-
----
-
-## Repository structure
-
-```
-tiny-deluxe/
-├── .github/
-│   └── workflows/
-│       └── nuvio_render.yml    ← GitHub Actions workflow
-├── collections/
-│   ├── scripts/
-│   │   └── purge.py            ← jsDelivr cache purge script
-│   └── {Catalog_slug}/         ← generated per catalog (auto-created)
-│       ├── backdrop/            ← per-item cinematic backdrops
-│       └── cards/               ← catalog cover cards (use these in Nuvio)
-├── AIOMetadata.json             ← your AIOMetadata export (update to refresh)
-├── nuvio-collections.json       ← your Nuvio Collections config (maintain manually)
-├── nuvio_pipeline.py            ← main pipeline script
-├── requirements.txt             ← Python dependencies
-└── README.md
-```
-
----
-
-## Updating your catalogs
-
-To add, remove, or change catalogs:
-
-1. Re-export `AIOMetadata.json` from your AIOMetadata app.
-2. Upload it to the repo root (drag-and-drop in the GitHub UI works).
-3. The push will automatically trigger the pipeline.
-4. New catalogs get generated; removed catalogs keep their old images (you can delete them manually from the `collections/` folder).
-5. Update `nuvio-collections.json` with the new URLs.
+1. **Checkout** — full history clone
+2. **Python 3.11** — set up with pip cache
+3. **Font install** — NimbusSans Bold (Helvetica Neue equivalent) + Liberation Sans fallback
+4. **Dependencies** — `pip install requests Pillow`
+5. **Validate** — confirms `nuvio-collections.json` exists and has valid `collections.*` entries
+6. **Generate** — runs `generate_catalog_assets.py --target <input> [--force]`
+7. **Commit & push** — stages only `backdrop/`, `focused/`, `cover/` assets and `title/.gitkeep` placeholders; commits with a summary line
+8. **Purge CDN** — runs `collections/scripts/purge.py` to flush jsDelivr cache immediately
 
 ---
 
@@ -177,19 +158,73 @@ git clone https://github.com/ggyummi/tiny-deluxe.git
 cd tiny-deluxe
 pip install -r requirements.txt
 
-export TMDB_API_KEY=your_key_here
-export FANART_API_KEY=your_key_here
+export AIOMETADATA_URL=https://your-aiometadata-instance.example.com
+export TMDB_API_KEY=your_key_here   # optional
 
-python nuvio_pipeline.py
+# Process everything
+python generate_catalog_assets.py --target all
+
+# Process one folder
+python generate_catalog_assets.py --target streaming
+
+# Process one catalog
+python generate_catalog_assets.py --target netflix
+
+# Force-regenerate even if files exist
+python generate_catalog_assets.py --target all --force
+```
+
+Dependencies: `requests`, `Pillow` — no other packages required. No authentication tokens are sent in HTTP requests.
+
+---
+
+## CDN cache purging
+
+After new assets are committed, the workflow automatically purges the jsDelivr cache for every updated file via `purge.jsdelivr.net`. Nuvio picks up fresh images within minutes rather than waiting up to 7 days for the cache to expire.
+
+The purge script can also be run locally:
+
+```bash
+# Dry-run — print URLs, make no requests
+python collections/scripts/purge.py --dry-run
+
+# Live purge
+python collections/scripts/purge.py
+
+# Override repo slug (useful for forks)
+REPO_SLUG=yourname/yourrepo python collections/scripts/purge.py
+```
+
+---
+
+## Repository structure
+
+```
+tiny-deluxe/
+├── .github/
+│   └── workflows/
+│       └── generate-assets.yml     ← GitHub Actions workflow
+├── collections/
+│   ├── scripts/
+│   │   └── purge.py                ← jsDelivr CDN cache purge script
+│   ├── discover/                   ← generated per folder (auto-created)
+│   │   ├── backdrop/
+│   │   ├── focused/
+│   │   ├── cover/
+│   │   └── title/
+│   ├── streaming/
+│   ├── genres/
+│   └── anime/
+├── generate_catalog_assets.py      ← main asset generator
+├── nuvio-collections.json          ← catalog config (edit to add/remove catalogs)
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
 ## Credits
 
-- [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup) — inspiration and CDN approach
-- [bramst0ne/prism-wallpapers](https://github.com/bramst0ne/prism-wallpapers) — visual style inspiration
-- [betterer-covers](https://betterer-covers.itsrenoria.workers.dev/) — layout inspiration
-- [TMDb](https://www.themoviedb.org/) — poster and backdrop images
-- [Fanart.tv](https://fanart.tv/) — HD logo assets
+- [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup) — Prism tilted-grid backdrop engine and CDN approach
+- [TMDb](https://www.themoviedb.org/) — backdrop and poster images
 - [jsDelivr](https://www.jsdelivr.com/) — free CDN for GitHub repos

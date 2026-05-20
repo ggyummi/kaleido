@@ -56,9 +56,9 @@ TMDB_IMG_BASE   = "https://image.tmdb.org/t/p"
 # Optional: base URL of your AIOMetadata / Stremio addon instance.
 # When set the script calls {AIOMETADATA_URL}/catalog/{type}/{id}.json directly —
 # fully anonymous HTTP, no OAuth tokens required in the request.
-# When absent the script falls back to the public Cinemeta addon.
 AIOMETADATA_URL = os.environ.get("AIOMETADATA_URL", "").rstrip("/")
-CINEMETA_URL    = "https://v3-cinemeta.strem.io"
+FANART_API_KEY  = os.environ.get("FANART_API_KEY", "")
+FANART_BASE     = "https://webservice.fanart.tv/v3"
 
 COLLECTIONS_DIR = Path("collections")
 SOURCE_JSON     = Path("nuvio-collections.json")
@@ -134,6 +134,125 @@ def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
     ids = {c["id"] for c in catalogs if "id" in c}
     log.info("Manifest loaded — %d catalog ID(s) available.", len(ids))
     return ids
+
+# ─── Fanart.tv Logo Fetching ───────────────────────────────────────────────────────
+#
+# Fetches English-only title logo PNGs from Fanart.tv.
+# Movies  → hdmovielogo (needs TMDB ID, resolved via TMDB /find)
+# Series  → hdtvlogo    (needs TVDB ID, resolved via TMDB /find + /external_ids)
+# Any logo whose lang != "en" is skipped entirely.
+
+def _resolve_fanart_id(imdb_id: str, media_type: str) -> "tuple[str, str] | None":
+    """
+    Convert an IMDb ID (tt…) to the ID + endpoint type Fanart.tv needs.
+    Returns (fanart_id, "movies" | "tv") or None on failure.
+    Requires TMDB_API_KEY for the TMDB lookup calls.
+    """
+    if not TMDB_API_KEY or not imdb_id or not imdb_id.startswith("tt"):
+        return None
+
+    find_data = safe_get(
+        f"{TMDB_BASE}/find/{imdb_id}",
+        {"api_key": TMDB_API_KEY, "external_source": "imdb_id"},
+    )
+    if not find_data:
+        return None
+
+    if media_type == "movie":
+        results = find_data.get("movie_results", [])
+        if results:
+            return str(results[0]["id"]), "movies"
+
+    else:  # series / anime
+        results = find_data.get("tv_results", [])
+        if not results:
+            return None
+        tmdb_tv_id = results[0]["id"]
+        # Fanart.tv TV endpoint uses TVDB IDs — fetch them from TMDB
+        ext = safe_get(
+            f"{TMDB_BASE}/tv/{tmdb_tv_id}/external_ids",
+            {"api_key": TMDB_API_KEY},
+        )
+        if ext and ext.get("tvdb_id"):
+            return str(ext["tvdb_id"]), "tv"
+        # Last resort: try the TMDB ID directly (Fanart accepts it for some titles)
+        return str(tmdb_tv_id), "tv"
+
+    return None
+
+
+def fetch_fanart_logo(imdb_id: str, media_type: str) -> "Image.Image | None":
+    """
+    Return an RGBA PIL Image of the best English title logo from Fanart.tv,
+    or None if no English logo exists or FANART_API_KEY is not set.
+    Non-English logos are skipped entirely — no fallback to other languages.
+    """
+    if not FANART_API_KEY:
+        return None
+
+    resolved = _resolve_fanart_id(imdb_id, media_type)
+    if not resolved:
+        return None
+
+    fanart_id, fanart_type = resolved
+    logo_key = "hdmovielogo" if fanart_type == "movies" else "hdtvlogo"
+
+    data = safe_get(
+        f"{FANART_BASE}/{fanart_type}/{fanart_id}",
+        {"api_key": FANART_API_KEY},
+    )
+    if not data:
+        return None
+
+    logos = data.get(logo_key, [])
+    en_logos = [l for l in logos if l.get("lang") == "en"]
+    if not en_logos:
+        return None  # no English logo — skip, do not use any other language
+
+    en_logos.sort(key=lambda l: int(l.get("likes", 0)), reverse=True)
+    url = en_logos[0].get("url")
+    if not url:
+        return None
+
+    img = download_image(url)
+    return img.convert("RGBA") if img else None
+
+
+def composite_logo_on_tile(tile: Image.Image, logo: Image.Image) -> Image.Image:
+    """
+    Overlay an English title logo onto the bottom-left of a backdrop tile.
+    - Logo is scaled to fit within 65 % of tile width and 28 % of tile height.
+    - A soft dark gradient is applied behind the logo area for legibility.
+    - Returns a new RGBA image.
+    """
+    tw, th = tile.size
+    max_lw = int(tw * 0.65)
+    max_lh = int(th * 0.28)
+
+    lw, lh = logo.size
+    scale  = min(max_lw / lw, max_lh / lh, 1.0)
+    new_lw = max(1, int(lw * scale))
+    new_lh = max(1, int(lh * scale))
+    logo_r = logo.resize((new_lw, new_lh), Image.LANCZOS)
+
+    pad_x  = int(tw * 0.08)
+    pad_y  = int(th * 0.08)
+    logo_x = pad_x
+    logo_y = th - new_lh - pad_y
+
+    # Soft dark gradient behind the logo so it reads on any backdrop
+    shadow = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    draw   = ImageDraw.Draw(shadow)
+    grad_top = max(0, logo_y - int(th * 0.06))
+    for y in range(grad_top, th):
+        t     = (y - grad_top) / max(1, th - grad_top)
+        alpha = int(170 * (t ** 1.4))
+        draw.line([(0, y), (tw, y)], fill=(0, 0, 0, alpha))
+
+    result = tile.convert("RGBA")
+    result = Image.alpha_composite(result, shadow)
+    result.paste(logo_r, (logo_x, logo_y), logo_r)
+    return result
 
 # ─── HTTP Helpers ──────────────────────────────────────────────────────────────────
 
@@ -287,21 +406,36 @@ def fetch_all_backdrops(
                 mid = meta.get("id", "")
                 if mid and mid not in seen:
                     seen.add(mid)
+                    # Tag the media type so Fanart lookup knows movie vs series
+                    meta["_fanart_type"] = src["type"]
                     all_metas.append(meta)
 
         backdrops: list[Image.Image] = []
+        logos:     list["Image.Image | None"] = []
         top: Image.Image | None = None
         for meta in all_metas[:limit]:
             name = meta.get("name", meta.get("id", "?"))
             img  = backdrop_from_meta(meta)
             if img:
-                log.info("    ✓ %s", name)
                 if top is None:
                     top = img
+
+                # Fetch English-only Fanart logo (skips if no EN logo exists)
+                logo: "Image.Image | None" = None
+                if FANART_API_KEY:
+                    imdb_id    = meta.get("id", "")
+                    src_type   = meta.get("_fanart_type", "movie")
+                    logo       = fetch_fanart_logo(imdb_id, src_type)
+                    logo_label = "✓ logo" if logo else "– no EN logo"
+                    log.info("     %s %s", logo_label, name)
+
                 backdrops.append(img)
+                logos.append(logo)
+                log.info("  ✓ %s", name)
             else:
-                log.warning("    ✗ No image — %s", name)
-        return backdrops, top
+                log.warning("  ✗ No image — %s", name)
+
+        return backdrops, logos, top
 
     # ── TMDb fallback path (no catalogSources field) ─────────────────────────
     log.info("  No catalogSources — using TMDb resolver as fallback.")
@@ -318,7 +452,7 @@ def fetch_all_backdrops(
             backdrops.append(img)
         else:
             log.warning("    ✗ No backdrop — %s", title)
-    return backdrops, top
+    return backdrops, [None] * len(backdrops), top
 
 # ─── TMDb Item Resolution (fallback when catalogSources is absent) ─────────────────
 
@@ -452,24 +586,35 @@ def rounded_rect_mask(width: int, height: int, radius: int = CARD_RADIUS) -> Ima
     return mask
 
 
-def make_tile(image: Image.Image, tile_width: int, tile_height: int) -> Image.Image:
-    """Crop to ratio, resize, and apply rounded-corner mask — returns RGBA tile."""
-    sw, sh       = image.size
+def make_tile(
+    image: Image.Image,
+    tile_width: int,
+    tile_height: int,
+    logo: "Image.Image | None" = None,
+) -> Image.Image:
+    """Crop to ratio, resize, apply rounded-corner mask, and optionally overlay an
+    English title logo at the bottom-left of the tile. Returns an RGBA tile."""
+    sw, sh = image.size
     target_ratio = tile_width / tile_height
-    src_ratio    = sw / sh
+    src_ratio = sw / sh
     if src_ratio > target_ratio:
-        new_w  = int(sh * target_ratio)
-        left   = (sw - new_w) // 2
-        image  = image.crop((left, 0, left + new_w, sh))
+        new_w = int(sh * target_ratio)
+        left  = (sw - new_w) // 2
+        image = image.crop((left, 0, left + new_w, sh))
     else:
-        new_h  = int(sw / target_ratio)
-        top    = (sh - new_h) // 2
-        image  = image.crop((0, top, sw, top + new_h))
-    image          = image.resize((tile_width, tile_height), Image.LANCZOS)
-    scaled_radius  = max(8, int(CARD_RADIUS * tile_width / TILE_W))
-    mask           = rounded_rect_mask(tile_width, tile_height, radius=scaled_radius)
-    result         = Image.new("RGBA", (tile_width, tile_height), (0, 0, 0, 0))
+        new_h = int(sw / target_ratio)
+        top   = (sh - new_h) // 2
+        image = image.crop((0, top, sw, top + new_h))
+
+    image        = image.resize((tile_width, tile_height), Image.LANCZOS)
+    scaled_radius = max(8, int(CARD_RADIUS * tile_width / TILE_W))
+    mask         = rounded_rect_mask(tile_width, tile_height, radius=scaled_radius)
+    result       = Image.new("RGBA", (tile_width, tile_height), (0, 0, 0, 0))
     result.paste(image, mask=mask)
+
+    if logo is not None:
+        result = composite_logo_on_tile(result, logo)
+
     return result
 
 
@@ -480,6 +625,7 @@ def build_tilted_grid(
     scale: float = 1.0,
     focus_x: float | None = None,
     focus_y: float | None = None,
+    logos: "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
     """
     Compose a staggered TILT_DEG-degree tilted grid of tile images onto a dark
@@ -519,7 +665,8 @@ def build_tilted_grid(
             break
         x    = row * stagger_px + col * (tile_width + gap)
         y    = row * (tile_height + gap)
-        tile = make_tile(tile_list[index], tile_width, tile_height)
+        logo = logos[index] if logos and index < len(logos) else None
+        tile = make_tile(tile_list[index], tile_width, tile_height, logo=logo)
         grid.paste(tile, (x, y), tile)
 
     rotated = grid.rotate(TILT_DEG, expand=True, resample=Image.BICUBIC)
@@ -631,17 +778,28 @@ def apply_gradient(
     return result
 
 
-def render_prism_backdrop(images: list[Image.Image], slug: str) -> Image.Image:
+def render_prism_backdrop(
+    images: list[Image.Image],
+    slug:   str,
+    logos:  "list[Image.Image | None] | None" = None,
+) -> Image.Image:
     """
     Build a 1920x1080 Prism-style tilted-grid backdrop from downloaded PIL Images.
+    When logos is provided (parallel list to images), each tile gets its English
+    title logo overlaid at the bottom-left. Tiles without a logo are unmodified.
     Accent color is derived deterministically from the catalog slug.
     Returns an RGBA image.
     """
-    accent      = default_accent_for_label(slug)
+    accent = default_accent_for_label(slug)
+    # Pad logos list to match the images list length if provided
+    effective_logos: list["Image.Image | None"] = []
+    if logos:
+        effective_logos = list(logos) + [None] * max(0, len(images) - len(logos))
     tile_images = ensure_minimum_tiles(images, 12)
-    canvas      = build_tilted_grid(
+    canvas = build_tilted_grid(
         tile_images, CANVAS_W, CANVAS_H, scale=1.0,
         focus_x=FOCUS_X, focus_y=FOCUS_Y,
+        logos=effective_logos if effective_logos else None,
     )
     return apply_gradient(canvas, accent)
 
@@ -845,13 +1003,13 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
 
     if do_backdrop:
         log.info("  Fetching backdrop artwork …")
-        backdrops, top_backdrop = fetch_all_backdrops(catalog)
+        backdrops, logos, top_backdrop = fetch_all_backdrops(catalog)
         if not backdrops:
             log.warning("  No backdrop images fetched — skipping render.")
             return
         log.info("  Fetched %d backdrop image(s).", len(backdrops))
         log.info("  Rendering Prism backdrop …")
-        prism = render_prism_backdrop(backdrops, slug)
+        prism = render_prism_backdrop(backdrops, slug, logos=logos)
         save_dual(prism, base / "backdrop" / slug)
         log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
@@ -866,7 +1024,7 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
                 top_backdrop = None
         if top_backdrop is None:
             log.info("  Fetching one image for hero base …")
-            _, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+            _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
         if top_backdrop is None:
             log.warning("  No image available for hero banner — skipping covers.")
             return

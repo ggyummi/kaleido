@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-nuvio_pipeline.py  —  Kaleido / Nuvio Backdrop Pipeline  (corrected build)
+nuvio_pipeline.py  —  tiny-deluxe / Nuvio Backdrop Pipeline  (corrected build)
 ===========================================================================
 Reads a local AIOMetadata.json, resolves every catalog to a list of TMDb
 items, fetches poster + optional logo, renders a cinematic 1920×1080
@@ -529,7 +529,7 @@ def find_metadata_file() -> str:
 
 def main() -> None:
     log.info("╔══════════════════════════════════════════════════════════════╗")
-    log.info("║           Kaleido · Nuvio Backdrop Pipeline                 ║")
+    log.info("║           tiny-deluxe · Nuvio Backdrop Pipeline              ║")
     log.info("╚══════════════════════════════════════════════════════════════╝")
 
     validate_env()

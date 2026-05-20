@@ -1,0 +1,142 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .github/workflows/generate-backdrops.yml
+#
+# tiny-deluxe · Nuvio TV — Backdrop Generator
+#
+# Generates the Prism 3D tilted-grid backdrop collage for each matched catalog:
+#
+#   collections/{folder}/backdrop/{catalog}.jpg(.webp)
+#       Fetches up to 40 landscape backdrops from all catalogSources
+#       (movies + series mixed), renders a 10°-tilted staggered tile grid
+#       at 1920×1080, and applies a four-pass gradient overlay.
+#
+# Secrets  (Settings → Secrets and variables → Actions)
+# ─────────────────────────────────────────────────────────────────────────────
+#   AIOMETADATA_URL   Base URL of your AIOMetadata Stremio addon (recommended)
+#   TMDB_API_KEY      TMDb API key (optional fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: "🖼 Nuvio · Backdrop Generator"
+
+on:
+  workflow_dispatch:
+    inputs:
+
+      target:
+        description: >
+          Folder (e.g. streaming), catalog slug (e.g. netflix), or "all".
+        required: true
+        default: "all"
+        type: string
+
+      force_regenerate:
+        description: >
+          Force regeneration even when backdrop files already exist on disk.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  generate-backdrops:
+    name: "Generate & Commit Backdrop Assets"
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Python ────────────────────────────────────────────────────────────
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Python dependencies ───────────────────────────────────────────────
+      - name: "📦 Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # ── 4. Validate nuvio-collections.json ───────────────────────────────────
+      - name: "🔍 Validate nuvio-collections.json"
+        run: |
+          if [ ! -f nuvio-collections.json ]; then
+            echo "❌  nuvio-collections.json not found in the repository root."
+            exit 1
+          fi
+          python3 -c "
+          import json, sys
+          with open('nuvio-collections.json') as f:
+              data = json.load(f)
+          items = data if isinstance(data, list) else data.get('catalogs', [])
+          flat = []
+          for item in items:
+              flat.extend(item['folders']) if 'folders' in item else flat.append(item)
+          matches = [c['id'] for c in flat
+                     if c.get('id','').startswith('collections.')
+                     and c['id'].count('.') == 2]
+          print(f'Found {len(matches)} collections.* catalog(s):')
+          for m in matches[:10]:
+              print(f'  {m}')
+          if len(matches) > 10:
+              print(f'  ... and {len(matches) - 10} more')
+          if not matches:
+              print('Warning: No collections.{folder}.{catalog} IDs found.')
+              sys.exit(1)
+          "
+
+      # ── 5. Generate backdrop assets ──────────────────────────────────────────
+      - name: "🚀 Generate backdrop assets"
+        env:
+          AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
+          TMDB_API_KEY:    ${{ secrets.TMDB_API_KEY }}
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force_regenerate }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python generate_catalog_assets.py \
+            --target "${{ github.event.inputs.target }}" \
+            --mode   backdrop \
+            --json   nuvio-collections.json \
+            $FORCE_FLAG
+
+      # ── 6. Commit & push backdrop assets ─────────────────────────────────────
+      - name: "📤 Commit & push backdrop assets"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            "collections/*/backdrop/*.jpg" \
+            "collections/*/backdrop/*.webp" \
+            2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "✅  No new backdrops — nothing to commit."
+          else
+            N_BACK=$(git diff --cached --name-only | grep -c '/backdrop/' || true)
+            TARGET="${{ github.event.inputs.target }}"
+            git commit -m "🖼 Backdrop assets: target=${TARGET} — ${N_BACK} backdrop(s) [Automated]"
+            git push \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
+              HEAD:${{ github.ref_name }}
+            echo "✅  Pushed ${N_BACK} backdrop(s) to ${{ github.ref_name }}."
+          fi
+
+      # ── 7. Purge jsDelivr CDN cache ──────────────────────────────────────────
+      - name: "🧹 Purge jsDelivr CDN cache"
+        env:
+          REPO_SLUG: ${{ github.repository }}
+        run: python collections/scripts/purge.py || true

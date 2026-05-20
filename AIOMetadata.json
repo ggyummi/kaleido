@@ -1,6 +1,6 @@
 {
   "version": "2.3.0",
-  "exportedAt": "2026-05-19T00:00:23.188Z",
+  "exportedAt": "2026-05-20T16:25:55.521Z",
   "config": {
     "language": "en-US",
     "includeAdult": true,
@@ -6233,9 +6233,9 @@
     ],
     "publicmetadbWatchTracking": true,
     "hideUnreleasedShows": true,
-    "lastModified": 1778881292875,
-    "configVersion": 1778881292876,
-    "configHash": "d1f5b46d9a39ad75"
+    "lastModified": 1779280549987,
+    "configVersion": 1779280549988,
+    "configHash": "c4d77de7c6b6b836"
   },
   "metadata": {
     "apiKeysExcluded": true,

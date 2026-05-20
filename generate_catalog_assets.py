@@ -904,7 +904,8 @@ def _t1_rounded_mask(w: int, h: int, radius: int) -> Image.Image:
 
 
 def _t1_make_tile(
-    img: Image.Image, tw: int, th: int, opacity: float, cfg: "_T1Cfg"
+    img: Image.Image, tw: int, th: int, opacity: float, cfg: "_T1Cfg",
+    logo: "Image.Image | None" = None,
 ) -> Image.Image:
     iw, ih = img.size
     tr = tw / th
@@ -923,11 +924,13 @@ def _t1_make_tile(
         rc, gc, bc, ac = out.split()
         ac = ac.point(lambda v: int(v * opacity))
         out = Image.merge("RGBA", (rc, gc, bc, ac))
+    if logo is not None:
+        out = composite_logo_on_tile(out, logo)
     return out
 
 
 def _t1_build_layout(
-    landscape_imgs: "list[Image.Image]",
+    landscape_pairs: "list[tuple[Image.Image, Image.Image | None]]",
     canvas_w: int,
     canvas_h: int,
     scale: float,
@@ -948,9 +951,9 @@ def _t1_build_layout(
     oy     = bleed_y
     canvas = Image.new("RGBA", (over_w, over_h), (10, 12, 16, 255))
 
-    l_cutoff        = max(1, int(len(landscape_imgs) * 0.35))
-    pri_landscapes  = landscape_imgs[:l_cutoff]
-    rest_landscapes = landscape_imgs[l_cutoff:]
+    l_cutoff        = max(1, int(len(landscape_pairs) * 0.35))
+    pri_landscapes  = landscape_pairs[:l_cutoff]
+    rest_landscapes = landscape_pairs[l_cutoff:]
 
     rng            = random.Random(42)
     tiles_to_place: list[dict] = []
@@ -1036,7 +1039,8 @@ def _t1_build_layout(
                 # rest pool empty (very few images) — reuse pri pool
                 src = repeat_pri[pri_idx % len(repeat_pri)]
                 pri_idx += 1
-        tile = _t1_make_tile(src, t["w"], t["h"], opacity=t["opacity"], cfg=cfg)
+        src_img, src_logo = src
+        tile = _t1_make_tile(src_img, t["w"], t["h"], opacity=t["opacity"], cfg=cfg, logo=src_logo)
         canvas.paste(tile, (int(t["x"]), int(t["y"])), tile)
 
     return canvas, ox, oy
@@ -1202,18 +1206,34 @@ def render_t1_backdrop(
     images:  "list[Image.Image]",
     slug:    str,
     variant: str,
+    logos:   "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
     """
     Render a 1920×1080 T1-style backdrop from pre-fetched PIL Images.
     variant='tilt' → perspective warp + −10° rotation  (backdrop_T1.py style).
     variant='flat' → −10° tilt only, no perspective    (backdrop_T1_flat.py style).
+    logos, when provided, is a parallel list to images; each non-None entry is an
+    RGBA PNG logo composited onto the bottom-left of its corresponding tile.
     Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
     """
     cfg    = _T1_TILT_CFG if variant == "tilt" else _T1_FLAT_CFG
     accent = default_accent_for_label(slug)
-    imgs   = ensure_minimum_tiles(images, 4)
 
-    over, ox, oy = _t1_build_layout(imgs, CANVAS_W, CANVAS_H, scale=1.0, cfg=cfg)
+    # Pair each image with its logo so logos survive the minimum-tile padding step.
+    n           = len(images)
+    eff_logos   = list(logos) if logos else []
+    eff_logos  += [None] * max(0, n - len(eff_logos))
+    pairs       = list(zip(images, eff_logos[:n]))
+
+    # Pad to minimum 4 pairs, cycling the existing pairs (logos stay attached).
+    minimum = 4
+    if 0 < len(pairs) < minimum:
+        for img, logo in itertools.cycle(pairs):
+            if len(pairs) >= minimum:
+                break
+            pairs.append((img.copy(), logo))
+
+    over, ox, oy = _t1_build_layout(pairs, CANVAS_W, CANVAS_H, scale=1.0, cfg=cfg)
     warped       = _t1_perspective_warp(over, ox, oy, CANVAS_W, CANVAS_H, cfg)
     dof          = _t1_apply_dof(warped, scale=1.0, cfg=cfg)
     return _t1_apply_gradient(dof, accent)
@@ -1434,12 +1454,12 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
         log.info("  Rendering T1 tilt backdrop …")
-        t1_tilt = render_t1_backdrop(backdrops, slug, "tilt")
+        t1_tilt = render_t1_backdrop(backdrops, slug, "tilt", logos=logos)
         save_dual(t1_tilt, base / "backdrop" / f"{slug}_tilt")
         log.info("  ✓  backdrop/%s_tilt.jpg + .webp", slug)
 
         log.info("  Rendering T1 flat backdrop …")
-        t1_flat = render_t1_backdrop(backdrops, slug, "flat")
+        t1_flat = render_t1_backdrop(backdrops, slug, "flat", logos=logos)
         save_dual(t1_flat, base / "backdrop" / f"{slug}_flat")
         log.info("  ✓  backdrop/%s_flat.jpg + .webp", slug)
 

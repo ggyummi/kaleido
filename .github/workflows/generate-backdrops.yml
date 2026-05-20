@@ -19,7 +19,20 @@
 name: "🖼 Nuvio · Backdrop Generator"
 
 on:
+  # Manual run from the Actions tab
   workflow_dispatch:
+
+  # Auto-run every Monday at 00:00 UTC
+  schedule:
+    - cron: '0 0 * * 1'
+
+  # Auto-run when these files are changed on main
+  push:
+    branches: [main]
+    paths:
+      - 'nuvio-collections.json'
+      - 'generate_catalog_assets.py'
+      - '.github/workflows/**'
     inputs:
 
       target:

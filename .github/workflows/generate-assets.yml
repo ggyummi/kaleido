@@ -5,23 +5,24 @@
 #
 # What this workflow produces (per matched catalog)
 # ─────────────────────────────────────────────────────────────────────────────
-#   collections/{folder}/{catalog}/backdrops/backdrop.jpg(.webp)
-#       Landscape collage grid of top-ranked items in the catalog.
+#   collections/{folder}/backdrop/{catalog}.jpg(.webp)
+#       Landscape collage grid — movies + series from all catalogSources mixed.
 #
-#   collections/{folder}/{catalog}/focused/focused.jpg(.webp)
+#   collections/{folder}/focused/{catalog}.jpg(.webp)
 #       Hero banner: full backdrop + left gradient + uppercase label + glow.
 #       Used as the "selected / hover" state in Nuvio TV.
 #
-#   collections/{folder}/{catalog}/cover/cover.jpg(.webp)
+#   collections/{folder}/cover/{catalog}.jpg(.webp)
 #       Same layout as focused but without the glow — the unfocused state.
 #       The visual difference creates the pop effect when a user scrolls on.
 #
-#   collections/{folder}/{catalog}/title/
+#   collections/{folder}/title/
 #       Initialized only. Never touched by automation (manual assets safe).
 #
 # Required GitHub Secrets  (Settings → Secrets and variables → Actions)
 # ─────────────────────────────────────────────────────────────────────────────
-#   TMDB_API_KEY    https://www.themoviedb.org/settings/api
+#   TMDB_API_KEY      https://www.themoviedb.org/settings/api  (optional fallback)
+#   AIOMETADATA_URL   Base URL of your AIOMetadata Stremio addon (optional)
 #
 # Triggering manually
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ jobs:
       # ── 6. Run asset generator ─────────────────────────────────────────────────────────
       - name: "🚀 Generate catalog assets"
         env:
+          AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           FORCE_FLAG=""
@@ -153,12 +155,12 @@ jobs:
 
           # Stage generated assets only — never touch title/ contents
           git add \
-            "collections/*/*/backdrops/*.jpg" \
-            "collections/*/*/backdrops/*.webp" \
-            "collections/*/*/focused/*.jpg" \
-            "collections/*/*/focused/*.webp" \
-            "collections/*/*/cover/*.jpg" \
-            "collections/*/*/cover/*.webp" \
+            "collections/*/backdrop/*.jpg" \
+            "collections/*/backdrop/*.webp" \
+            "collections/*/focused/*.jpg" \
+            "collections/*/focused/*.webp" \
+            "collections/*/cover/*.jpg" \
+            "collections/*/cover/*.webp" \
             2>/dev/null || true
 
           # Also stage any newly created (empty) title/ dirs via .gitkeep
@@ -167,15 +169,15 @@ jobs:
               touch "$dir/.gitkeep"
             fi
           done
-          git add "collections/*/*/*/.gitkeep" 2>/dev/null || true
+          git add "collections/*/*/.gitkeep" 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "✅  No new assets generated — nothing to commit."
           else
             CHANGED=$(git diff --cached --name-only | wc -l)
-            N_BACK=$(git diff --cached --name-only | grep -c 'backdrops/' || true)
-            N_FOC=$(git diff --cached  --name-only | grep -c 'focused/'   || true)
-            N_COV=$(git diff --cached  --name-only | grep -c 'cover/'     || true)
+            N_BACK=$(git diff --cached --name-only | grep -c '/backdrop/' || true)
+            N_FOC=$(git diff --cached  --name-only | grep -c '/focused/'  || true)
+            N_COV=$(git diff --cached  --name-only | grep -c '/cover/'    || true)
             TARGET="${{ github.event.inputs.target }}"
 
             git commit -m "🎨 Catalog assets: target=${TARGET} — ${N_BACK} backdrop(s), ${N_FOC} focused, ${N_COV} cover(s) [Automated]"

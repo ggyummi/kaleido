@@ -53,20 +53,18 @@ def iter_asset_paths(root: Path):
     """
     Yield repo-relative POSIX paths for every generated image file under:
 
-      Legacy pipeline layout (single-level):
+      Flat layout: collections/{folder}/{asset_type}/{catalog}.jpg
         collections/*/backdrop/*
         collections/*/cards/*
-
-      Catalog asset generator layout (two-level: {folder}/{catalog}/...):
-        collections/*/*/backdrops/*
-        collections/*/*/focused/*
-        collections/*/*/cover/*
+        collections/*/focused/*
+        collections/*/cover/*
 
     Both .jpg and .webp files are included.
     """
-    legacy_patterns = ["*/backdrop/*", "*/cards/*"]
-    catalog_patterns = ["*/*/backdrops/*", "*/*/focused/*", "*/*/cover/*"]
-    for pattern in legacy_patterns + catalog_patterns:
+    # flat layout: collections/{folder}/{asset_type}/{catalog}.jpg
+    # legacy layout: collections/{slug}/backdrop/* and collections/{slug}/cards/*
+    patterns = ["*/backdrop/*", "*/cards/*", "*/focused/*", "*/cover/*"]
+    for pattern in patterns:
         for path in sorted(root.glob(pattern)):
             if path.is_file() and path.suffix in {".jpg", ".webp"}:
                 yield path.relative_to(REPO_ROOT).as_posix()

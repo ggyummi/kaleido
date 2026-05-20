@@ -4,16 +4,20 @@ generate_catalog_assets.py — Nuvio TV Media Catalog Asset Generator
 ===========================================================================
 Reads nuvio-collections.json, resolves each catalog entry whose ID matches
 the pattern  collections.{folder}.{catalog},  fetches landscape backdrop
-artwork from TMDb, and writes four asset types per catalog:
+artwork from Stremio addon endpoints (or TMDb as fallback), and writes four
+asset types per catalog into a FLAT directory structure:
 
-  collections/{folder}/{catalog}/
-      backdrops/backdrop.jpg(.webp)   — landscape collage grid (T2-style)
-      focused/focused.jpg(.webp)      — hero banner + left gradient + glow text
-      cover/cover.jpg(.webp)          — same layout, glow removed
-      title/                          — initialized only; NEVER overwritten
+  collections/{folder}/backdrop/{catalog}.jpg(.webp)  — landscape collage grid
+  collections/{folder}/focused/{catalog}.jpg(.webp)   — hero banner + glow text
+  collections/{folder}/cover/{catalog}.jpg(.webp)     — hero banner, no glow
+  collections/{folder}/title/                         — init only; never overwritten
 
-Required environment variable:
-  TMDB_API_KEY   https://www.themoviedb.org/settings/api
+Backdrop images are fetched from ALL catalogSources (movies + series mixed).
+No OAuth tokens are required — uses public Stremio addon HTTP endpoints.
+
+Optional environment variables:
+  AIOMETADATA_URL   Base URL of AIOMetadata/Stremio addon (preferred)
+  TMDB_API_KEY      TMDb API key (fallback for entries without catalogSources)
 """
 
 import io
@@ -42,9 +46,16 @@ log = logging.getLogger("nuvio.catalog")
 
 # ─── Global Config ───────────────────────────────────────────────────────────────
 
-TMDB_API_KEY  = os.environ.get("TMDB_API_KEY", "")
-TMDB_BASE     = "https://api.themoviedb.org/3"
-TMDB_IMG_BASE = "https://image.tmdb.org/t/p"
+TMDB_API_KEY    = os.environ.get("TMDB_API_KEY", "")
+TMDB_BASE       = "https://api.themoviedb.org/3"
+TMDB_IMG_BASE   = "https://image.tmdb.org/t/p"
+
+# Optional: base URL of your AIOMetadata / Stremio addon instance.
+# When set the script calls {AIOMETADATA_URL}/catalog/{type}/{id}.json directly —
+# fully anonymous HTTP, no OAuth tokens required in the request.
+# When absent the script falls back to the public Cinemeta addon.
+AIOMETADATA_URL = os.environ.get("AIOMETADATA_URL", "").rstrip("/")
+CINEMETA_URL    = "https://v3-cinemeta.strem.io"
 
 COLLECTIONS_DIR = Path("collections")
 SOURCE_JSON     = Path("nuvio-collections.json")
@@ -74,10 +85,17 @@ _FONT_CANDIDATES = [
 # ─── Environment Validation ────────────────────────────────────────────────────────
 
 def validate_env() -> None:
-    if not TMDB_API_KEY:
-        log.error("TMDB_API_KEY environment variable is not set.")
-        log.error("Add it as a GitHub Secret and map it in the workflow env: block.")
-        sys.exit(1)
+    if not AIOMETADATA_URL and not TMDB_API_KEY:
+        log.warning(
+            "Neither AIOMETADATA_URL nor TMDB_API_KEY is set. "
+            "Catalog images will be fetched from the public Cinemeta addon "
+            "(generic top content only — provider-specific catalogs will not be accurate)."
+        )
+    elif not AIOMETADATA_URL:
+        log.info(
+            "AIOMETADATA_URL not set — provider/genre-specific catalogs will fall back "
+            "to TMDb Discover (TMDB_API_KEY present)."
+        )
 
 # ─── HTTP Helpers ──────────────────────────────────────────────────────────────────
 
@@ -128,7 +146,126 @@ def parse_collection_id(catalog_id: str) -> tuple[str, str] | None:
         return parts[1], parts[2]
     return None
 
-# ─── TMDb Item Resolution ────────────────────────────────────────────────────────────
+# ─── Stremio Catalog Fetching (primary, unauthenticated) ─────────────────────────────
+#
+# The script calls {AIOMETADATA_URL}/catalog/{type}/{id}.json — a plain GET with no
+# auth headers. AIOMetadata handles any provider auth internally on the server side.
+# Without AIOMETADATA_URL it falls back to the public Cinemeta addon (top content).
+
+# Cinemeta catalog IDs used when no AIOMetadata instance is configured
+_CINEMETA_ID = {
+    "movie":  "top",
+    "series": "top",
+}
+
+
+def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
+    """
+    Fetch metas from a Stremio addon catalog endpoint (unauthenticated GET).
+    With AIOMETADATA_URL: calls {instance}/catalog/{type}/{id}.json
+    Without:              falls back to Cinemeta top (generic popular content).
+    Returns the metas list, or [] on failure.
+    """
+    if AIOMETADATA_URL:
+        url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
+    else:
+        cinemeta_id = _CINEMETA_ID.get(media_type, "top")
+        url = f"{CINEMETA_URL}/catalog/{media_type}/{cinemeta_id}.json"
+        if catalog_id not in ("top", "top.byReviews"):
+            log.info(
+                "    No AIOMETADATA_URL — mapping '%s' to Cinemeta '%s'",
+                catalog_id, cinemeta_id,
+            )
+    log.info("    GET %s", url)
+    data = safe_get(url)
+    metas = (data or {}).get("metas", [])
+    log.info("    → %d meta(s)", len(metas))
+    return metas
+
+
+def backdrop_from_meta(meta: dict) -> Image.Image | None:
+    """
+    Download the landscape backdrop for a Stremio meta object.
+    Tries 'background'/'backgroundImage' first (landscape), then falls
+    back to 'poster' (portrait, cropped later) if no backdrop exists.
+    """
+    time.sleep(RATE_SLEEP)
+    for key in ("background", "backgroundImage"):
+        url = meta.get(key)
+        if url:
+            img = download_image(url)
+            if img:
+                return img
+    poster = meta.get("poster")
+    if poster:
+        return download_image(poster)
+    return None
+
+
+def get_catalog_sources(catalog: dict) -> list[dict]:
+    """Return the catalogSources (or sources) list; [] if absent."""
+    return catalog.get("catalogSources", catalog.get("sources", []))
+
+
+def fetch_all_backdrops(
+    catalog: dict, limit: int = MAX_ITEMS
+) -> tuple[list[Image.Image], "Image.Image | None"]:
+    """
+    Primary data path — mixes backdrops from every entry in catalogSources,
+    deduplicating by Stremio meta ID, capping at `limit` images.
+
+    Falls back to the TMDb-based resolver when catalogSources is absent
+    (backward-compatible with entries that still use metadata.discover.params).
+
+    Returns (backdrop_images_list, top_backdrop_or_None).
+    """
+    sources = get_catalog_sources(catalog)
+
+    if sources:
+        # ── Stremio path: call addon endpoints, mix movies + series ──────────
+        all_metas: list[dict] = []
+        seen: set[str] = set()
+        for src in sources:
+            metas = fetch_stremio_catalog(src["type"], src["id"])
+            for meta in metas:
+                mid = meta.get("id", "")
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    all_metas.append(meta)
+
+        backdrops: list[Image.Image] = []
+        top: Image.Image | None = None
+        for meta in all_metas[:limit]:
+            name = meta.get("name", meta.get("id", "?"))
+            img = backdrop_from_meta(meta)
+            if img:
+                log.info("    ✓ %s", name)
+                if top is None:
+                    top = img
+                backdrops.append(img)
+            else:
+                log.warning("    ✗ No image — %s", name)
+        return backdrops, top
+
+    # ── TMDb fallback path (no catalogSources field) ─────────────────────────
+    log.info("  No catalogSources — using TMDb resolver as fallback.")
+    items = resolve_items(catalog, limit)
+    backdrops = []
+    top = None
+    for item in items[:limit]:
+        title = item.get("title") or item.get("name") or "?"
+        img = fetch_backdrop_tmdb(item)
+        if img:
+            log.info("    ✓ %s", title)
+            if top is None:
+                top = img
+            backdrops.append(img)
+        else:
+            log.warning("    ✗ No backdrop — %s", title)
+    return backdrops, top
+
+
+# ─── TMDb Item Resolution (fallback when catalogSources is absent) ────────────────────
 
 _AUTH_SOURCES  = {"trakt", "simkl"}
 _ANIME_SOURCES = {"kitsu", "mal", "anilist"}
@@ -208,13 +345,13 @@ def resolve_items(catalog: dict, limit: int = MAX_ITEMS) -> list[dict]:
     items = (data or {}).get("results", [])
     return _tag(items, tmdb_type)[:limit]
 
-# ─── Backdrop Fetching ─────────────────────────────────────────────────────────────────
+# ─── TMDb Backdrop Fetching (fallback only) ───────────────────────────────────────────
 
-def fetch_backdrop(item: dict) -> Image.Image | None:
+def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
     """
-    Fetch the highest-quality landscape backdrop for a TMDb item.
-    Tries the /images endpoint first (sorted by vote_average), then falls
-    back to the backdrop_path field on the item itself.
+    Fetch the highest-quality landscape backdrop for a TMDb item dict.
+    Used only by the TMDb fallback path (when catalogSources is absent).
+    Tries the /images endpoint first, then falls back to backdrop_path.
     """
     tmdb_id   = str(item.get("id", ""))
     tmdb_type = item.get("_tmdb_type", "movie")
@@ -505,84 +642,65 @@ def save_dual(img: Image.Image, base_path: Path) -> None:
     rgb.save(base_path.with_suffix(".webp"), "WEBP", quality=85, method=6)
 
 
-def assets_exist(base: Path, catalog_slug: str) -> bool:
-    """Return True if all generated outputs are already present."""
-    checks = [
-        base / "backdrops" / "backdrop.jpg",
-        base / "backdrops" / "backdrop.webp",
-        base / "focused"   / "focused.jpg",
-        base / "focused"   / "focused.webp",
-        base / "cover"     / "cover.jpg",
-        base / "cover"     / "cover.webp",
-    ]
-    return all(p.exists() for p in checks)
+def assets_exist(folder: str, slug: str) -> bool:
+    """Return True if all six generated outputs already exist on disk."""
+    base = COLLECTIONS_DIR / folder
+    return all(
+        (base / asset_type / f"{slug}{ext}").exists()
+        for asset_type in ("backdrop", "focused", "cover")
+        for ext in (".jpg", ".webp")
+    )
 
 # ─── Per-catalog Orchestration ─────────────────────────────────────────────────────────────
 
 def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
     name = catalog.get("name", slug)
-    base = COLLECTIONS_DIR / folder / slug
+    # Correct path: collections/{folder}/{asset_type}/{slug}.jpg
+    base = COLLECTIONS_DIR / folder
 
     log.info("")
     log.info("━" * 62)
     log.info("Catalog  : %s  [%s/%s]", name, folder, slug)
-    log.info("Output   : %s/", base)
+    log.info("Output   : %s/{backdrop,cover,focused}/%s.jpg", base, slug)
     log.info("━" * 62)
 
-    # Initialize all four subdirectories
-    for sub in ("backdrops", "cover", "focused", "title"):
-        (base / sub).mkdir(parents=True, exist_ok=True)
+    # Initialize all asset-type directories; title/ is never written by automation
+    for asset_type in ("backdrop", "cover", "focused", "title"):
+        (base / asset_type).mkdir(parents=True, exist_ok=True)
 
-    # Respect skip-existing (default) unless --force was passed
-    if not force and assets_exist(base, slug):
+    if not force and assets_exist(folder, slug):
         log.info("  All assets already exist — skipping (use --force to regenerate).")
         return
 
-    # Resolve TMDb items
-    items = resolve_items(catalog)
-    if not items:
-        log.warning("  No items resolved — skipping.")
-        return
-    log.info("  Resolved %d item(s). Fetching backdrop artwork …", len(items))
-
-    # Fetch landscape backdrops for all items
-    backdrops: list[Image.Image] = []
-    top_backdrop: Image.Image | None = None
-
-    for i, item in enumerate(items[:MAX_ITEMS]):
-        title = item.get("title") or item.get("name") or "?"
-        img   = fetch_backdrop(item)
-        if img:
-            log.info("    [%02d] ✓ %s", i + 1, title)
-            if top_backdrop is None:
-                top_backdrop = img
-            backdrops.append(img)
-        else:
-            log.warning("    [%02d] ✗ No backdrop — %s", i + 1, title)
+    # Fetch backdrops — mixed from all catalogSources (movies + series combined)
+    log.info("  Fetching backdrop artwork …")
+    backdrops, top_backdrop = fetch_all_backdrops(catalog)
 
     if not backdrops:
         log.warning("  No backdrop images fetched — skipping render.")
         return
 
-    # ── A. backdrops/ — Landscape collage grid ────────────────────────────────────
-    log.info("  Rendering collage backdrop (%d images) …", len(backdrops))
-    collage = render_collage_backdrop(backdrops)
-    save_dual(collage, base / "backdrops" / "backdrop")
-    log.info("  ✓  backdrops/backdrop.jpg + .webp")
+    log.info("  Fetched %d backdrop image(s).", len(backdrops))
 
-    # ── B. focused/ — Hero banner with outer glow ──────────────────────────────
+    # ── A. backdrop/{slug}.jpg — landscape collage grid ───────────────────────
+    log.info("  Rendering collage backdrop …")
+    collage = render_collage_backdrop(backdrops)
+    save_dual(collage, base / "backdrop" / slug)
+    log.info("  ✓  backdrop/%s.jpg + .webp", slug)
+
+    # ── B. focused/{slug}.jpg — hero banner with outer glow ───────────────────
     log.info("  Rendering focused banner …")
     focused = render_hero_banner(top_backdrop, slug, with_glow=True)
-    save_dual(focused, base / "focused" / "focused")
-    log.info("  ✓  focused/focused.jpg + .webp")
+    save_dual(focused, base / "focused" / slug)
+    log.info("  ✓  focused/%s.jpg + .webp", slug)
 
-    # ── C. cover/ — Hero banner without glow ────────────────────────────────
+    # ── C. cover/{slug}.jpg — hero banner without glow ────────────────────────
     log.info("  Rendering cover banner …")
     cover = render_hero_banner(top_backdrop, slug, with_glow=False)
-    save_dual(cover, base / "cover" / "cover")
-    log.info("  ✓  cover/cover.jpg + .webp")
+    save_dual(cover, base / "cover" / slug)
+    log.info("  ✓  cover/%s.jpg + .webp", slug)
 
-    # ── D. title/ — Initialized above; never written to ───────────────────────
+    # ── D. title/ — initialized above; never written to by automation ─────────
     log.info("  title/ initialized (manual assets preserved).")
 
 # ─── CLI & Entry Point ───────────────────────────────────────────────────────────────

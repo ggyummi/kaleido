@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 collections/scripts/purge.py
-─────────────────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────────────────────
 tiny-deluxe · jsDelivr CDN cache purge script
 
 Walks collections/*/backdrop/* and collections/*/cards/* and hits
@@ -9,7 +9,7 @@ purge.jsdelivr.net for every file so updated images are served immediately
 after a pipeline run instead of waiting up to 7 days for cache expiry.
 
 Usage
-─────────────────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────────────────────
   # Normal run (from repo root via GitHub Actions):
   python collections/scripts/purge.py
 
@@ -20,7 +20,7 @@ Usage
   REPO_SLUG=yourname/yourrepo python collections/scripts/purge.py
 
 Environment variables
-─────────────────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────────────────────
   REPO_SLUG   GitHub <owner>/<repo> string.
               Defaults to "ggyummi/tiny-deluxe".
               GitHub Actions sets this automatically via the workflow env block.
@@ -33,10 +33,10 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# ── Configuration ────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR  = Path(__file__).resolve().parent
-REPO_ROOT   = SCRIPT_DIR.parent.parent          # collections/scripts/ → repo root
+REPO_ROOT   = SCRIPT_DIR.parent.parent          # collections/scripts/ -> repo root
 COLLECTIONS = REPO_ROOT / "collections"
 
 # Repo slug: prefer the env var injected by the workflow, fall back to default.
@@ -47,20 +47,28 @@ CDN_REF     = "@main"                           # always purge the @main ref
 TIMEOUT     = 20                                # seconds per request
 
 
-# ── Asset discovery ────────────────────────────────────────────────────────────
+# ── Asset discovery ────────────────────────────────────────────────────────────────────
 
 def iter_asset_paths(root: Path):
     """
-    Yield repo-relative POSIX paths for every file under:
-      collections/*/backdrop/*
-      collections/*/cards/*
+    Yield repo-relative POSIX paths for every generated image file under:
 
-    Both .jpg and .webp files are included so the CDN serves fresh versions
-    of both formats the moment a new pipeline run commits them.
+      Legacy pipeline layout (single-level):
+        collections/*/backdrop/*
+        collections/*/cards/*
+
+      Catalog asset generator layout (two-level: {folder}/{catalog}/...):
+        collections/*/*/backdrops/*
+        collections/*/*/focused/*
+        collections/*/*/cover/*
+
+    Both .jpg and .webp files are included.
     """
-    for pattern in ["*/backdrop/*", "*/cards/*"]:
+    legacy_patterns = ["*/backdrop/*", "*/cards/*"]
+    catalog_patterns = ["*/*/backdrops/*", "*/*/focused/*", "*/*/cover/*"]
+    for pattern in legacy_patterns + catalog_patterns:
         for path in sorted(root.glob(pattern)):
-            if path.is_file():
+            if path.is_file() and path.suffix in {".jpg", ".webp"}:
                 yield path.relative_to(REPO_ROOT).as_posix()
 
 
@@ -69,14 +77,14 @@ def build_purge_urls(repo_slug: str) -> list[str]:
     return [f"{PURGE_BASE}/{repo_slug}{CDN_REF}/{p}" for p in paths]
 
 
-# ── Purge ──────────────────────────────────────────────────────────────────────
+# ── Purge ──────────────────────────────────────────────────────────────────────────────
 
 def purge_url(url: str, timeout: int) -> int:
     with urlopen(url, timeout=timeout) as resp:
         return resp.status
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
     parser = argparse.ArgumentParser(

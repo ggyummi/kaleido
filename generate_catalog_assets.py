@@ -776,63 +776,80 @@ def save_dual(img: Image.Image, base_path: Path) -> None:
     rgb.save(base_path.with_suffix(".webp"), "WEBP", quality=85, method=6)
 
 
-def assets_exist(folder: str, slug: str) -> bool:
-    """Return True if all six generated outputs already exist on disk."""
+def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
+    """Return True if all outputs for the given mode already exist on disk."""
     base = COLLECTIONS_DIR / folder
+    if mode == "backdrop":
+        types = ("backdrop",)
+    elif mode == "covers":
+        types = ("focused", "cover")
+    else:
+        types = ("backdrop", "focused", "cover")
     return all(
-        (base / asset_type / f"{slug}{ext}").exists()
-        for asset_type in ("backdrop", "focused", "cover")
+        (base / t / f"{slug}{ext}").exists()
+        for t in types
         for ext in (".jpg", ".webp")
     )
 
 # ─── Per-catalog Orchestration ─────────────────────────────────────────────────────────────
 
-def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
+def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: str = "all") -> None:
     name = catalog.get("name") or catalog.get("title") or slug
     base = COLLECTIONS_DIR / folder   # collections/{folder}/
 
+    do_backdrop = mode in ("all", "backdrop")
+    do_covers   = mode in ("all", "covers")
+
     log.info("")
     log.info("━" * 62)
-    log.info("Catalog  : %s  [%s/%s]", name, folder, slug)
-    log.info("Output   : %s/{backdrop,cover,focused}/%s.jpg", base, slug)
+    log.info("Catalog  : %s  [%s/%s]  mode=%s", name, folder, slug, mode)
     log.info("━" * 62)
 
-    # Initialise all asset-type directories; title/ is never written by automation.
     for asset_type in ("backdrop", "cover", "focused", "title"):
         (base / asset_type).mkdir(parents=True, exist_ok=True)
 
-    if not force and assets_exist(folder, slug):
-        log.info("  All assets already exist — skipping (use --force to regenerate).")
+    if not force and assets_exist(folder, slug, mode):
+        log.info("  Assets already exist for mode=%s — skipping (use --force to regenerate).", mode)
         return
 
-    log.info("  Fetching backdrop artwork …")
-    backdrops, top_backdrop = fetch_all_backdrops(catalog)
+    top_backdrop: "Image.Image | None" = None
 
-    if not backdrops:
-        log.warning("  No backdrop images fetched — skipping render.")
-        return
+    if do_backdrop:
+        log.info("  Fetching backdrop artwork …")
+        backdrops, top_backdrop = fetch_all_backdrops(catalog)
+        if not backdrops:
+            log.warning("  No backdrop images fetched — skipping render.")
+            return
+        log.info("  Fetched %d backdrop image(s).", len(backdrops))
+        log.info("  Rendering Prism backdrop …")
+        prism = render_prism_backdrop(backdrops, slug)
+        save_dual(prism, base / "backdrop" / slug)
+        log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
-    log.info("  Fetched %d backdrop image(s).", len(backdrops))
+    if do_covers:
+        # Re-use existing Prism backdrop from disk if available; avoids re-downloading.
+        backdrop_path = base / "backdrop" / f"{slug}.jpg"
+        if top_backdrop is None and backdrop_path.exists():
+            try:
+                top_backdrop = Image.open(backdrop_path).convert("RGB")
+                log.info("  Using existing backdrop/%s.jpg as hero base.", slug)
+            except Exception:
+                top_backdrop = None
+        if top_backdrop is None:
+            log.info("  Fetching one image for hero base …")
+            _, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+        if top_backdrop is None:
+            log.warning("  No image available for hero banner — skipping covers.")
+            return
+        log.info("  Rendering focused banner …")
+        focused = render_hero_banner(top_backdrop, slug, with_glow=True)
+        save_dual(focused, base / "focused" / slug)
+        log.info("  ✓  focused/%s.jpg + .webp", slug)
+        log.info("  Rendering cover banner …")
+        cover = render_hero_banner(top_backdrop, slug, with_glow=False)
+        save_dual(cover, base / "cover" / slug)
+        log.info("  ✓  cover/%s.jpg + .webp", slug)
 
-    # ── A. backdrop/{slug}.jpg — Prism tilted-grid collage ──────────────────────
-    log.info("  Rendering Prism backdrop …")
-    prism = render_prism_backdrop(backdrops, slug)
-    save_dual(prism, base / "backdrop" / slug)
-    log.info("  ✓  backdrop/%s.jpg + .webp", slug)
-
-    # ── B. focused/{slug}.jpg — hero banner (top backdrop) + glow text ──────────
-    log.info("  Rendering focused banner …")
-    focused = render_hero_banner(top_backdrop, slug, with_glow=True)
-    save_dual(focused, base / "focused" / slug)
-    log.info("  ✓  focused/%s.jpg + .webp", slug)
-
-    # ── C. cover/{slug}.jpg — hero banner (top backdrop), no glow ───────────────
-    log.info("  Rendering cover banner …")
-    cover = render_hero_banner(top_backdrop, slug, with_glow=False)
-    save_dual(cover, base / "cover" / slug)
-    log.info("  ✓  cover/%s.jpg + .webp", slug)
-
-    # ── D. title/ — initialised above; never written by automation ───────────────
     log.info("  title/ initialized (manual assets preserved).")
 
 # ─── CLI & Entry Point ───────────────────────────────────────────────────────────────
@@ -865,10 +882,17 @@ Target examples:
         action="store_true",
         help="Regenerate assets even if output files already exist",
     )
+    parser.add_argument(
+        "--mode",
+        default="all",
+        choices=["all", "backdrop", "covers"],
+        help="Which asset types to generate: all | backdrop | covers (default: all)",
+    )
     args = parser.parse_args()
 
     log.info("╔═════════════════════════════════════════════════════════╗")
     log.info("║          Nuvio TV · Catalog Asset Generator              ║")
+    log.info("║          mode: %-40s║", args.mode)
     log.info("╚═════════════════════════════════════════════════════════╝")
 
     validate_env()
@@ -905,14 +929,14 @@ Target examples:
         sys.exit(0)
 
     log.info(
-        "Processing %d catalog(s) for --target='%s' (force=%s).",
-        len(matched), target, args.force,
+        "Processing %d catalog(s) for --target='%s' --mode='%s' (force=%s).",
+        len(matched), target, args.mode, args.force,
     )
 
     errors = 0
     for catalog, folder, slug in matched:
         try:
-            process_catalog(catalog, folder, slug, force=args.force)
+            process_catalog(catalog, folder, slug, force=args.force, mode=args.mode)
         except Exception as exc:
             log.error("Fatal error in '%s/%s': %s", folder, slug, exc, exc_info=True)
             errors += 1

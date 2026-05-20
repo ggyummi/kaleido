@@ -921,36 +921,37 @@ def _render_plain_text(
 
 def render_hero_banner(
     backdrop: Image.Image,
-    catalog_slug: str,
+    label: str,
     with_glow: bool,
 ) -> Image.Image:
     """
-    Compose a 1920x1080 hero banner:
-      1. Crop/scale backdrop to fill canvas (accepts any PIL Image mode/size).
-      2. Apply left-side gradient (solid black to transparent at ~65% width).
-      3. Fit ALL-CAPS catalog_slug text into the left third, vertically centred.
-      4. Render with outer glow (focused) or without (cover).
-    Returns an RGB Image.
+    Compose a 1920×1080 hero banner from a single TEXTLESS backdrop image:
+      • Cover  (with_glow=False) → plain text, slightly reduced opacity
+      • Focused (with_glow=True) → full-opacity text with outer glow
+    `label` is already uppercase (e.g. "TRENDING").
     """
     bg = _crop_to_ratio(backdrop.convert("RGBA"), CANVAS_W, CANVAS_H).resize(
         (CANVAS_W, CANVAS_H), Image.LANCZOS
     )
     bg = Image.alpha_composite(bg, _make_left_gradient(CANVAS_W, CANVAS_H, solid_pct=0.25))
 
-    label     = catalog_slug.upper()
     font_path = _find_font_path()
-    max_tw    = int(CANVAS_W * 0.33) - 80
-    max_th    = int(CANVAS_H * 0.45)
-    font      = _fit_font(label, max_tw, max_th, font_path)
+
+    # Larger text area than before — meatier, more cinematic hero label
+    max_tw = int(CANVAS_W * 0.50) - 80
+    max_th = int(CANVAS_H * 0.65)
+    font   = _fit_font(label, max_tw, max_th, font_path)
 
     _, th = _text_bbox(label, font)
     x = 60
     y = (CANVAS_H - th) // 2
 
     if with_glow:
-        result = _render_glow_text(bg, label, font, (x, y), layer_opacity=0.88)
+        # Focused — full opacity + outer glow
+        result = _render_glow_text(bg, label, font, (x, y), layer_opacity=1.0)
     else:
-        result = _render_plain_text(bg, label, font, (x, y), layer_opacity=0.88)
+        # Cover — slightly reduced opacity, no glow
+        result = _render_plain_text(bg, label, font, (x, y), layer_opacity=0.70)
 
     return result.convert("RGB")
 
@@ -1014,28 +1015,33 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
     if do_covers:
-        # Re-use existing Prism backdrop from disk if available; avoids re-downloading.
-        backdrop_path = base / "backdrop" / f"{slug}.jpg"
-        if top_backdrop is None and backdrop_path.exists():
-            try:
-                top_backdrop = Image.open(backdrop_path).convert("RGB")
-                log.info("  Using existing backdrop/%s.jpg as hero base.", slug)
-            except Exception:
-                top_backdrop = None
+        # ALWAYS fetch a fresh textless backdrop (the most recently added /
+        # most popular item) — never re-use the tiled prism image.
         if top_backdrop is None:
-            log.info("  Fetching one image for hero base …")
+            log.info("  Fetching textless backdrop for hero base …")
             _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+
         if top_backdrop is None:
             log.warning("  No image available for hero banner — skipping covers.")
             return
+
+        # First word of the catalog title in all caps:
+        #   "Trending"  → "TRENDING"
+        #   "Top Rated" → "TOP"
+        title       = (catalog.get("title") or slug).strip()
+        first_word  = title.split()[0] if title.split() else slug
+        label       = first_word.upper()
+        log.info("  Hero label: %s", label)
+
         log.info("  Rendering focused banner …")
-        focused = render_hero_banner(top_backdrop, slug, with_glow=True)
+        focused = render_hero_banner(top_backdrop, label, with_glow=True)
         save_dual(focused, base / "focused" / slug)
-        log.info("  ✓  focused/%s.jpg + .webp", slug)
+        log.info("    ✓ focused/%s.jpg + .webp", slug)
+
         log.info("  Rendering cover banner …")
-        cover = render_hero_banner(top_backdrop, slug, with_glow=False)
+        cover = render_hero_banner(top_backdrop, label, with_glow=False)
         save_dual(cover, base / "cover" / slug)
-        log.info("  ✓  cover/%s.jpg + .webp", slug)
+        log.info("    ✓ cover/%s.jpg + .webp", slug)
 
     log.info("  title/ initialized (manual assets preserved).")
 

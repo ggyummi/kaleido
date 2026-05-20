@@ -14,6 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #   AIOMETADATA_URL   Base URL of your AIOMetadata Stremio addon (recommended)
 #   TMDB_API_KEY      TMDb API key (optional fallback)
+#   FANART_API_KEY    Fanart.tv API key (optional — enables logo overlays)
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: "🖼 Nuvio · Backdrop Generator"
@@ -107,6 +108,7 @@ jobs:
         env:
           AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
           TMDB_API_KEY:    ${{ secrets.TMDB_API_KEY }}
+          FANART_API_KEY:  ${{ secrets.FANART_API_KEY }}
         run: |
           FORCE_FLAG=""
           if [ "${{ github.event.inputs.force }}" = "true" ]; then

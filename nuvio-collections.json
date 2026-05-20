@@ -2,175 +2,136 @@
   {
     "id": "collections.discover.recommended",
     "name": "Recommended",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "sort_by": "popularity.desc",
-          "vote_count.gte": 200,
-          "vote_average.gte": 7.0
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.top" },
+      { "type": "series", "id": "tmdb.top" }
+    ]
   },
   {
     "id": "collections.discover.trending",
     "name": "Trending",
-    "type": "movie",
-    "source": "tmdb",
-    "enabled": true
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.trending" },
+      { "type": "series", "id": "tmdb.trending" }
+    ]
   },
   {
     "id": "collections.discover.top-rated",
     "name": "Top Rated",
-    "type": "movie",
-    "source": "tmdb",
-    "enabled": true
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.top_rated" },
+      { "type": "series", "id": "tmdb.top_rated" }
+    ]
   },
   {
     "id": "collections.discover.new-releases",
     "name": "New Releases",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "sort_by": "release_date.desc",
-          "vote_count.gte": 50,
-          "primary_release_date.gte": "2024-01-01"
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.year" },
+      { "type": "series", "id": "tmdb.airing_today" }
+    ]
   },
   {
     "id": "collections.streaming.netflix",
     "name": "Netflix",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_watch_providers": "8",
-          "watch_region": "US",
-          "sort_by": "popularity.desc"
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.netflix" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.netflix" }
+    ]
   },
   {
     "id": "collections.streaming.disney-plus",
     "name": "Disney+",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_watch_providers": "337",
-          "watch_region": "US",
-          "sort_by": "popularity.desc"
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.disney-plus" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.disney-plus" }
+    ]
   },
   {
     "id": "collections.streaming.prime-video",
     "name": "Prime Video",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_watch_providers": "9",
-          "watch_region": "US",
-          "sort_by": "popularity.desc"
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.prime-video" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.prime-video" }
+    ]
   },
   {
     "id": "collections.streaming.apple-tv",
     "name": "Apple TV+",
-    "type": "series",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "tv",
-        "params": {
-          "with_watch_providers": "350",
-          "watch_region": "US",
-          "sort_by": "popularity.desc"
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.apple-tv" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.apple-tv" }
+    ]
+  },
+  {
+    "id": "collections.streaming.crunchyroll",
+    "name": "Crunchyroll",
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.crunchyroll" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.crunchyroll" }
+    ]
+  },
+  {
+    "id": "collections.streaming.hbo-max",
+    "name": "Max",
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.streaming.hbo-max" },
+      { "type": "series", "id": "tmdb.discover.series.streaming.hbo-max" }
+    ]
   },
   {
     "id": "collections.genres.action",
     "name": "Action",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_genres": "28",
-          "sort_by": "popularity.desc",
-          "vote_count.gte": 100
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.genres.action" },
+      { "type": "series", "id": "tmdb.discover.series.genres.action-adventure" }
+    ]
   },
   {
     "id": "collections.genres.sci-fi",
     "name": "Sci-Fi",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_genres": "878",
-          "sort_by": "popularity.desc",
-          "vote_count.gte": 100
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.genres.science-fiction" },
+      { "type": "series", "id": "tmdb.discover.series.genres.sci-fi-fantasy" }
+    ]
   },
   {
     "id": "collections.genres.thriller",
     "name": "Thriller",
-    "type": "movie",
-    "source": "tmdb",
     "enabled": true,
-    "metadata": {
-      "discover": {
-        "mediaType": "movie",
-        "params": {
-          "with_genres": "53",
-          "sort_by": "popularity.desc",
-          "vote_count.gte": 100
-        }
-      }
-    }
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.genres.thriller" },
+      { "type": "series", "id": "tmdb.discover.series.genres.thriller" }
+    ]
+  },
+  {
+    "id": "collections.genres.comedy",
+    "name": "Comedy",
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "tmdb.discover.movie.genres.comedy" },
+      { "type": "series", "id": "tmdb.discover.series.genres.comedy" }
+    ]
   },
   {
     "id": "collections.anime.popular",
     "name": "Popular Anime",
-    "type": "series",
-    "source": "kitsu",
-    "enabled": true
+    "enabled": true,
+    "catalogSources": [
+      { "type": "movie",  "id": "kitsu.anime.movie" },
+      { "type": "series", "id": "kitsu.anime.series" }
+    ]
   }
 ]

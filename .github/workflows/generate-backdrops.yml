@@ -19,35 +19,30 @@
 name: "🖼 Nuvio · Backdrop Generator"
 
 on:
-  # Manual run from the Actions tab
+  # Manual run from the Actions tab — with target + force options
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Folder (e.g. streaming), catalog slug (e.g. netflix), or "all".'
+        required: false
+        default: 'all'
+      force:
+        description: 'Force regeneration even when cover files already exist on disk.'
+        required: false
+        type: boolean
+        default: false
 
   # Auto-run every Monday at 00:00 UTC
   schedule:
     - cron: '0 0 * * 1'
 
-  # Auto-run when these files are changed on main
+  # Auto-run when these key files are changed on main
   push:
     branches: [main]
     paths:
       - 'nuvio-collections.json'
       - 'generate_catalog_assets.py'
       - '.github/workflows/**'
-    inputs:
-
-      target:
-        description: >
-          Folder (e.g. streaming), catalog slug (e.g. netflix), or "all".
-        required: true
-        default: "all"
-        type: string
-
-      force_regenerate:
-        description: >
-          Force regeneration even when backdrop files already exist on disk.
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write

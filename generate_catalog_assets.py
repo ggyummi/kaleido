@@ -206,28 +206,32 @@ _CINEMETA_ID = {
 def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
     """
     Fetch metas from a Stremio addon catalog endpoint (unauthenticated GET).
-
-    Priority:
-      1. AIOMETADATA_URL set → call {instance}/catalog/{type}/{id}.json
-         If the call fails (404, 5xx, network error), fall through to step 2.
-      2. Cinemeta public addon → /catalog/{type}/top.json
+    Calls {AIOMETADATA_URL}/catalog/{type}/{id}.json directly.
+    If the call fails, logs an error and returns an empty list — no Cinemeta fallback.
     """
-    if AIOMETADATA_URL:
-        url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
-        log.info("    GET %s", url)
-        data = safe_get(url)
-        if data is not None:
-            metas = data.get("metas", [])
-            log.info("    → %d meta(s)", len(metas))
-            return metas
-log.error(
+    if not AIOMETADATA_URL:
+        log.error(
+            "AIOMETADATA_URL is not set. Cannot fetch catalog '%s/%s'.",
+            media_type, catalog_id,
+        )
+        return []
+
+    url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
+    log.info(" GET %s", url)
+    data = safe_get(url)
+
+    if data is not None:
+        metas = data.get("metas", [])
+        log.info(" → %d meta(s)", len(metas))
+        return metas
+
+    log.error(
         " AIOMetadata fetch failed for '%s/%s'. "
         "Skipping — no fallback. Check your AIOMETADATA_URL secret and "
         "confirm this catalog ID exists in your manifest.",
         media_type, catalog_id,
     )
     return []
-
 
 def backdrop_from_meta(meta: dict) -> Image.Image | None:
     """

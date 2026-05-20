@@ -7,12 +7,14 @@ the pattern  collections.{folder}.{catalog},  fetches landscape backdrop
 artwork from Stremio addon endpoints (or TMDb as fallback), and writes four
 asset types per catalog into a FLAT directory structure:
 
-  collections/{folder}/backdrop/{catalog}.jpg(.webp)  — landscape collage grid
+  collections/{folder}/backdrop/{catalog}.jpg(.webp)  — Prism 3D tilted-grid collage
   collections/{folder}/focused/{catalog}.jpg(.webp)   — hero banner + glow text
   collections/{folder}/cover/{catalog}.jpg(.webp)     — hero banner, no glow
   collections/{folder}/title/                         — init only; never overwritten
 
-Backdrop images are fetched from ALL catalogSources (movies + series mixed).
+Backdrop images are fetched from ALL catalogSources (movies + series mixed)
+and rendered using the Prism-style tilted-grid engine adapted from
+luckynumb3rs/stremio-perfect-setup (collections/scripts/backdrop.py).
 No OAuth tokens are required — uses public Stremio addon HTTP endpoints.
 
 Optional environment variables:
@@ -20,12 +22,13 @@ Optional environment variables:
   TMDB_API_KEY      TMDb API key (fallback for entries without catalogSources)
 """
 
+import colorsys
 import io
+import itertools
+import math
 import os
-import re
 import sys
 import json
-import math
 import time
 import logging
 import argparse
@@ -34,7 +37,7 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ─── Logging ─────────────────────────────────────────────────────────────────────────────
+# ─── Logging ──────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,16 +65,29 @@ SOURCE_JSON     = Path("nuvio-collections.json")
 
 CANVAS_W, CANVAS_H = 1920, 1080
 
-# Collage grid: landscape-only tiles adapted from prism-wallpapers T2 layout
-GRID_COLS = 5
-GRID_ROWS = 3
-GRID_GAP  = 10
-MAX_ITEMS = GRID_COLS * GRID_ROWS   # 15 landscape backdrop images
+# Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
+# even a modest pool gives a full grid; 40 gives good visual variety.
+MAX_TILES = 40
 
 TIMEOUT    = 20      # seconds per HTTP call
-RATE_SLEEP = 0.25    # keep TMDb within 40 req / 10 s
+RATE_SLEEP = 0.25    # polite rate limiting between image downloads
 
-# Candidate paths for Helvetica Neue Bold equivalents on Linux CI runners
+# ─── Prism Tile Geometry Constants ─────────────────────────────────────────────────────
+# Source: luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
+
+CARD_RADIUS = 9    # rounded-corner radius (px at 1x tile size)
+TILT_DEG    = 10   # clockwise tilt of the entire grid
+TILE_W      = 372  # nominal tile width  (at 1080p / scale=1.0)
+TILE_H      = 210  # nominal tile height (at 1080p / scale=1.0)
+GAP         = 9    # gap between tiles
+ROWS        = 10   # logical rows (buffer rows added internally)
+COLS        = 10   # logical cols (buffer cols added internally)
+STAGGER     = 0.5  # per-row horizontal offset as a fraction of (tile+gap)
+FOCUS_X     = 0.5  # horizontal focal point fraction (0=left, 1=right)
+FOCUS_Y     = 0.53 # vertical   focal point fraction (0=top,  1=bottom)
+
+# ─── Font Candidates ──────────────────────────────────────────────────────────────────
+
 _FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
     "/usr/share/fonts/urw-base35/NimbusSans-Bold.otf",
@@ -82,7 +98,7 @@ _FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
-# ─── Environment Validation ────────────────────────────────────────────────────────
+# ─── Environment Validation ─────────────────────────────────────────────────────────
 
 def validate_env() -> None:
     if not AIOMETADATA_URL and not TMDB_API_KEY:
@@ -146,13 +162,12 @@ def parse_collection_id(catalog_id: str) -> tuple[str, str] | None:
         return parts[1], parts[2]
     return None
 
-# ─── Stremio Catalog Fetching (primary, unauthenticated) ─────────────────────────────
+# ─── Stremio Catalog Fetching (primary, unauthenticated) ────────────────────────────
 #
-# The script calls {AIOMETADATA_URL}/catalog/{type}/{id}.json — a plain GET with no
-# auth headers. AIOMetadata handles any provider auth internally on the server side.
-# Without AIOMETADATA_URL it falls back to the public Cinemeta addon (top content).
+# Calls {AIOMETADATA_URL}/catalog/{type}/{id}.json — a plain GET with no auth.
+# AIOMetadata handles any provider auth server-side.
+# Falls back to the public Cinemeta addon when AIOMETADATA_URL is not set.
 
-# Cinemeta catalog IDs used when no AIOMetadata instance is configured
 _CINEMETA_ID = {
     "movie":  "top",
     "series": "top",
@@ -162,9 +177,8 @@ _CINEMETA_ID = {
 def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
     """
     Fetch metas from a Stremio addon catalog endpoint (unauthenticated GET).
-    With AIOMETADATA_URL: calls {instance}/catalog/{type}/{id}.json
+    With AIOMETADATA_URL: calls {instance}/catalog/{type}/{id}.json.
     Without:              falls back to Cinemeta top (generic popular content).
-    Returns the metas list, or [] on failure.
     """
     if AIOMETADATA_URL:
         url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
@@ -177,7 +191,7 @@ def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
                 catalog_id, cinemeta_id,
             )
     log.info("    GET %s", url)
-    data = safe_get(url)
+    data  = safe_get(url)
     metas = (data or {}).get("metas", [])
     log.info("    → %d meta(s)", len(metas))
     return metas
@@ -186,8 +200,7 @@ def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
 def backdrop_from_meta(meta: dict) -> Image.Image | None:
     """
     Download the landscape backdrop for a Stremio meta object.
-    Tries 'background'/'backgroundImage' first (landscape), then falls
-    back to 'poster' (portrait, cropped later) if no backdrop exists.
+    Tries background/backgroundImage (landscape) first, then poster as fallback.
     """
     time.sleep(RATE_SLEEP)
     for key in ("background", "backgroundImage"):
@@ -208,14 +221,14 @@ def get_catalog_sources(catalog: dict) -> list[dict]:
 
 
 def fetch_all_backdrops(
-    catalog: dict, limit: int = MAX_ITEMS
+    catalog: dict, limit: int = MAX_TILES
 ) -> tuple[list[Image.Image], "Image.Image | None"]:
     """
     Primary data path — mixes backdrops from every entry in catalogSources,
     deduplicating by Stremio meta ID, capping at `limit` images.
 
     Falls back to the TMDb-based resolver when catalogSources is absent
-    (backward-compatible with entries that still use metadata.discover.params).
+    (backward-compatible with entries using metadata.discover.params).
 
     Returns (backdrop_images_list, top_backdrop_or_None).
     """
@@ -237,7 +250,7 @@ def fetch_all_backdrops(
         top: Image.Image | None = None
         for meta in all_metas[:limit]:
             name = meta.get("name", meta.get("id", "?"))
-            img = backdrop_from_meta(meta)
+            img  = backdrop_from_meta(meta)
             if img:
                 log.info("    ✓ %s", name)
                 if top is None:
@@ -249,12 +262,12 @@ def fetch_all_backdrops(
 
     # ── TMDb fallback path (no catalogSources field) ─────────────────────────
     log.info("  No catalogSources — using TMDb resolver as fallback.")
-    items = resolve_items(catalog, limit)
+    items     = resolve_items(catalog, limit)
     backdrops = []
-    top = None
+    top       = None
     for item in items[:limit]:
         title = item.get("title") or item.get("name") or "?"
-        img = fetch_backdrop_tmdb(item)
+        img   = fetch_backdrop_tmdb(item)
         if img:
             log.info("    ✓ %s", title)
             if top is None:
@@ -264,13 +277,11 @@ def fetch_all_backdrops(
             log.warning("    ✗ No backdrop — %s", title)
     return backdrops, top
 
-
-# ─── TMDb Item Resolution (fallback when catalogSources is absent) ────────────────────
+# ─── TMDb Item Resolution (fallback when catalogSources is absent) ─────────────────
 
 _AUTH_SOURCES  = {"trakt", "simkl"}
 _ANIME_SOURCES = {"kitsu", "mal", "anilist"}
 
-# Map catalog slug keywords → TMDb list endpoints
 _SLUG_ENDPOINT = {
     "trending":    "/trending/{t}/week",
     "popular":     "/{t}/popular",
@@ -282,7 +293,7 @@ _SLUG_ENDPOINT = {
 }
 
 
-def resolve_items(catalog: dict, limit: int = MAX_ITEMS) -> list[dict]:
+def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
     """
     Resolve a catalog definition to a ranked list of TMDb item dicts.
     Each item will have '_tmdb_type' set to 'movie' or 'tv'.
@@ -312,7 +323,7 @@ def resolve_items(catalog: dict, limit: int = MAX_ITEMS) -> list[dict]:
     discover = meta.get("discover", {})
     if discover and "params" in discover:
         media_type = "tv" if discover.get("mediaType") == "tv" else "movie"
-        params = {k: v for k, v in discover["params"].items() if v is not None}
+        params     = {k: v for k, v in discover["params"].items() if v is not None}
         params["api_key"] = TMDB_API_KEY
         data  = safe_get(f"{TMDB_BASE}/discover/{media_type}", params)
         items = (data or {}).get("results", [])
@@ -345,13 +356,11 @@ def resolve_items(catalog: dict, limit: int = MAX_ITEMS) -> list[dict]:
     items = (data or {}).get("results", [])
     return _tag(items, tmdb_type)[:limit]
 
-# ─── TMDb Backdrop Fetching (fallback only) ───────────────────────────────────────────
 
 def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
     """
     Fetch the highest-quality landscape backdrop for a TMDb item dict.
     Used only by the TMDb fallback path (when catalogSources is absent).
-    Tries the /images endpoint first, then falls back to backdrop_path.
     """
     tmdb_id   = str(item.get("id", ""))
     tmdb_type = item.get("_tmdb_type", "movie")
@@ -359,14 +368,13 @@ def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
         return None
 
     time.sleep(RATE_SLEEP)
-
     data = safe_get(f"{TMDB_BASE}/{tmdb_type}/{tmdb_id}/images",
                     {"api_key": TMDB_API_KEY})
     if data:
-        backdrops = sorted(data.get("backdrops", []),
-                           key=lambda b: b.get("vote_average", 0), reverse=True)
-        if backdrops:
-            img = download_image(f"{TMDB_IMG_BASE}/original{backdrops[0]['file_path']}")
+        bds = sorted(data.get("backdrops", []),
+                     key=lambda b: b.get("vote_average", 0), reverse=True)
+        if bds:
+            img = download_image(f"{TMDB_IMG_BASE}/original{bds[0]['file_path']}")
             if img:
                 return img
 
@@ -375,99 +383,226 @@ def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
         return download_image(f"{TMDB_IMG_BASE}/w1280{bp}")
     return None
 
-# ─── Collage Backdrop (T2-style landscape grid) ───────────────────────────────────────
+# ─── Prism Backdrop Engine ────────────────────────────────────────────────────────────────
 #
-# Adapted from bramst0ne/prism-wallpapers backdrop_T2 — tiling logic only,
-# simplified to a pure landscape (16:9) grid on a single 1920×1080 canvas.
-# The grid is intentionally ~10% taller than the canvas so tiles bleed off
-# the top and bottom edges, giving a seamless full-bleed appearance.
-# A radial vignette + subtle left edge gradient are composited on top.
-
-def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    iw, ih = img.size
-    target_r = target_w / target_h
-    src_r    = iw / ih
-    if src_r > target_r:
-        new_w = int(ih * target_r)
-        return img.crop(((iw - new_w) // 2, 0, (iw - new_w) // 2 + new_w, ih))
-    new_h = int(iw / target_r)
-    return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
+# Adapted from luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
+#
+# Changes for our integration:
+#   • No TMDB API calls — we supply pre-downloaded PIL Images directly.
+#   • Canvas size fixed to 1920×1080 (scale=1.0).
+#   • Accent color derived deterministically from catalog slug (no cover scan).
+#   • render_prism_backdrop() is the single public entry point.
 
 
-def _build_vignette(w: int, h: int) -> Image.Image:
-    """Radial border vignette composited over the tile grid for depth."""
-    vig  = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(vig)
-    steps = 50
-    for i in range(steps, 0, -1):
-        t     = (steps - i) / steps
-        alpha = int(t ** 2.2 * 165)
-        inset = i * max(w, h) // (steps * 6)
-        draw.rounded_rectangle(
-            [inset, inset, w - inset, h - inset],
-            radius=max(1, inset * 2),
-            fill=(0, 0, 0, alpha),
-        )
-    return vig
+def default_accent_for_label(label: str) -> tuple[int, int, int]:
+    """Derive a deterministic HSV-based accent color from the catalog slug."""
+    seed = sum((i + 1) * ord(c) for i, c in enumerate(label or "Backdrop"))
+    hue  = (seed % 360) / 360.0
+    r, g, b = colorsys.hsv_to_rgb(hue, 0.65, 0.88)
+    return (int(r * 255), int(g * 255), int(b * 255))
 
 
-def _collage_edge_gradient(w: int, h: int) -> Image.Image:
-    """Subtle left/right edge darkening for the collage backdrop."""
-    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    pixels  = overlay.load()
-    fade_w  = int(w * 0.18)
-    for x in range(fade_w):
-        t     = 1.0 - (x / fade_w)
-        alpha = int(140 * (t ** 1.6))
-        if alpha:
-            for y in range(h):
-                pixels[x, y] = (6, 8, 14, alpha)
-    for x in range(w - fade_w, w):
-        t     = (x - (w - fade_w)) / fade_w
-        alpha = int(140 * (t ** 1.6))
-        if alpha:
-            for y in range(h):
-                pixels[x, y] = (6, 8, 14, alpha)
-    return overlay
+def rounded_rect_mask(width: int, height: int, radius: int = CARD_RADIUS) -> Image.Image:
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([0, 0, width - 1, height - 1], radius=radius, fill=255)
+    return mask
 
 
-def render_collage_backdrop(images: list[Image.Image]) -> Image.Image:
+def make_tile(image: Image.Image, tile_width: int, tile_height: int) -> Image.Image:
+    """Crop to ratio, resize, and apply rounded-corner mask — returns RGBA tile."""
+    sw, sh       = image.size
+    target_ratio = tile_width / tile_height
+    src_ratio    = sw / sh
+    if src_ratio > target_ratio:
+        new_w  = int(sh * target_ratio)
+        left   = (sw - new_w) // 2
+        image  = image.crop((left, 0, left + new_w, sh))
+    else:
+        new_h  = int(sw / target_ratio)
+        top    = (sh - new_h) // 2
+        image  = image.crop((0, top, sw, top + new_h))
+    image          = image.resize((tile_width, tile_height), Image.LANCZOS)
+    scaled_radius  = max(8, int(CARD_RADIUS * tile_width / TILE_W))
+    mask           = rounded_rect_mask(tile_width, tile_height, radius=scaled_radius)
+    result         = Image.new("RGBA", (tile_width, tile_height), (0, 0, 0, 0))
+    result.paste(image, mask=mask)
+    return result
+
+
+def build_tilted_grid(
+    tiles: list[Image.Image],
+    canvas_width: int,
+    canvas_height: int,
+    scale: float = 1.0,
+    focus_x: float | None = None,
+    focus_y: float | None = None,
+) -> Image.Image:
     """
-    Tile landscape images (16:9) into a 1920x1080 canvas in GRID_ROWS x GRID_COLS
-    cells, repeating images cyclically to fill the grid. The grid height slightly
-    overflows the canvas so tiles bleed equally off top and bottom.
-    A vignette and edge gradient are composited on top.
+    Compose a staggered TILT_DEG-degree tilted grid of tile images onto a dark
+    canvas centred on the focal point.  Best images are placed closest to the
+    focal point; the pool is cycled to fill all grid slots.
+    Returns an RGBA image at (canvas_width, canvas_height).
     """
-    gap     = GRID_GAP
-    tile_w  = (CANVAS_W - (GRID_COLS - 1) * gap) // GRID_COLS
-    tile_h  = round(tile_w * 9 / 16)
-    grid_h  = GRID_ROWS * tile_h + (GRID_ROWS - 1) * gap
-    y_start = (CANVAS_H - grid_h) // 2     # negative -> bleed top + bottom
+    fx = FOCUS_X if focus_x is None else focus_x
+    fy = FOCUS_Y if focus_y is None else focus_y
 
-    canvas = Image.new("RGB", (CANVAS_W, CANVAS_H), (10, 10, 16))
+    tile_width  = int(TILE_W * scale)
+    tile_height = int(TILE_H * scale)
+    gap         = int(GAP   * scale)
 
-    total_slots = GRID_ROWS * GRID_COLS
-    pool = (images * math.ceil(total_slots / max(len(images), 1)))[:total_slots]
+    cols       = COLS + 3
+    rows       = ROWS + 3
+    needed     = rows * cols
+    tile_list  = (tiles * (needed // len(tiles) + 1))[:needed]
+    stagger_px = int(STAGGER * (tile_width + gap))
 
-    for slot, img in enumerate(pool):
-        row = slot // GRID_COLS
-        col = slot %  GRID_COLS
-        try:
-            thumb = _crop_to_ratio(img, tile_w, tile_h).resize(
-                (tile_w, tile_h), Image.LANCZOS
-            )
-            x = col * (tile_w + gap)
-            y = y_start + row * (tile_h + gap)
-            canvas.paste(thumb, (x, y))
-        except Exception as exc:
-            log.warning("  Tile [%d,%d] failed: %s", row, col, exc)
+    grid_width  = cols * (tile_width + gap) + rows * stagger_px
+    grid_height = rows * (tile_height + gap)
+    grid = Image.new("RGBA", (grid_width, grid_height), (0, 0, 0, 0))
 
-    rgba = canvas.convert("RGBA")
-    rgba = Image.alpha_composite(rgba, _build_vignette(CANVAS_W, CANVAS_H))
-    rgba = Image.alpha_composite(rgba, _collage_edge_gradient(CANVAS_W, CANVAS_H))
-    return rgba.convert("RGB")
+    focal_x   = fx * grid_width
+    focal_y   = fy * grid_height
+    focal_row = max(0, min(rows - 1, int(focal_y / (tile_height + gap))))
+    focal_col = max(0, min(cols - 1,
+                           int((focal_x - focal_row * stagger_px) / (tile_width + gap))))
 
-# ─── Hero Banner (focused / cover) ───────────────────────────────────────────────────────────
+    # Sort cells nearest-to-focal first so the best images land at the focal area.
+    cells = [(row, col) for row in range(rows) for col in range(cols)]
+    cells.sort(key=lambda pos: abs(pos[0] - focal_row) + abs(pos[1] - focal_col))
+
+    for index, (row, col) in enumerate(cells):
+        if index >= len(tile_list):
+            break
+        x    = row * stagger_px + col * (tile_width + gap)
+        y    = row * (tile_height + gap)
+        tile = make_tile(tile_list[index], tile_width, tile_height)
+        grid.paste(tile, (x, y), tile)
+
+    rotated = grid.rotate(TILT_DEG, expand=True, resample=Image.BICUBIC)
+    rw, rh  = rotated.size
+
+    # Map the focal point through the rotation transform to find where to anchor it.
+    angle_rad    = math.radians(-TILT_DEG)
+    pre_cx       = fx * grid_width  - grid_width  / 2
+    pre_cy       = fy * grid_height - grid_height / 2
+    rot_cx       = pre_cx * math.cos(angle_rad) - pre_cy * math.sin(angle_rad)
+    rot_cy       = pre_cx * math.sin(angle_rad) + pre_cy * math.cos(angle_rad)
+    focus_in_rx  = rw / 2 + rot_cx
+    focus_in_ry  = rh / 2 + rot_cy
+
+    paste_x = int(canvas_width  / 2 - focus_in_rx)
+    paste_y = int(canvas_height / 2 - focus_in_ry)
+
+    canvas = Image.new("RGBA", (canvas_width, canvas_height), (10, 10, 12, 255))
+    canvas.paste(rotated, (paste_x, paste_y), rotated)
+    return canvas
+
+
+def ensure_minimum_tiles(
+    tile_images: list[Image.Image], minimum_count: int
+) -> list[Image.Image]:
+    """Repeat available tiles until we reach the minimum count for the grid."""
+    if len(tile_images) >= minimum_count or not tile_images:
+        return tile_images
+    padded = list(tile_images)
+    for tile in itertools.cycle(tile_images):
+        if len(padded) >= minimum_count:
+            break
+        padded.append(tile.copy())
+    return padded
+
+
+def apply_gradient(
+    canvas: Image.Image, accent: tuple[int, int, int]
+) -> Image.Image:
+    """
+    Composite four directional gradient overlays onto the canvas (RGBA in, RGBA out):
+      • dark left-edge fade   (readability for text rendered on focused/cover)
+      • dark bottom vignette  (grounds the grid)
+      • dark bottom-left corner radial
+      • accent-coloured top-right corner glow (blurred for a soft halo)
+    """
+    width, height = canvas.size
+
+    def make_linear_gradient(gw: int, gh: int, direction: str) -> Image.Image:
+        img    = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+        pixels = img.load()
+
+        if direction == "left":
+            for x in range(gw):
+                mix   = max(0.0, 1.0 - x / (gw * 0.45))
+                alpha = int(200 * mix ** 1.6)
+                if alpha:
+                    color = (6, 6, 8, alpha)
+                    for y in range(gh):
+                        pixels[x, y] = color
+
+        elif direction == "bottom":
+            for y in range(gh):
+                mix   = max(0.0, (y - gh * 0.50) / (gh * 0.50))
+                alpha = int(200 * mix ** 1.4)
+                if alpha:
+                    color = (6, 6, 8, alpha)
+                    for x in range(gw):
+                        pixels[x, y] = color
+
+        elif direction == "corner_bl":
+            max_diag = math.hypot(gw, gh)
+            for x in range(gw):
+                for y in range(gh):
+                    dist  = math.hypot(x, gh - y)
+                    mix   = dist / max_diag
+                    base  = max(0.0, 1.0 - mix / 0.60)
+                    alpha = int(230 * base ** 2.2)
+                    if alpha:
+                        pixels[x, y] = (6, 6, 8, min(255, alpha))
+
+        elif direction == "corner_tr_color":
+            max_diag     = math.hypot(gw, gh)
+            red, grn, bl = accent
+            for x in range(gw):
+                for y in range(gh):
+                    dist  = math.hypot(gw - x, y)
+                    mix   = dist / max_diag
+                    base  = max(0.0, 1.0 - mix / 0.72)
+                    alpha = int(118 * base ** 1.9)
+                    if alpha:
+                        pixels[x, y] = (red, grn, bl, min(255, alpha))
+
+        return img
+
+    # Corner gradients built at 1/4 size then scaled up (much faster per-pixel loop).
+    left_grad    = make_linear_gradient(width,      height,      "left")
+    bottom_grad  = make_linear_gradient(width,      height,      "bottom")
+    small_bl     = make_linear_gradient(width // 4, height // 4, "corner_bl")
+    corner_grad  = small_bl.resize((width, height), Image.BILINEAR)
+    small_tr     = make_linear_gradient(width // 4, height // 4, "corner_tr_color")
+    accent_grad  = small_tr.resize((width, height), Image.BILINEAR)
+    accent_grad  = accent_grad.filter(ImageFilter.GaussianBlur(radius=max(28, width // 64)))
+
+    result = Image.alpha_composite(canvas,  corner_grad)
+    result = Image.alpha_composite(result,  left_grad)
+    result = Image.alpha_composite(result,  bottom_grad)
+    result = Image.alpha_composite(result,  accent_grad)
+    return result
+
+
+def render_prism_backdrop(images: list[Image.Image], slug: str) -> Image.Image:
+    """
+    Build a 1920x1080 Prism-style tilted-grid backdrop from downloaded PIL Images.
+    Accent color is derived deterministically from the catalog slug.
+    Returns an RGBA image.
+    """
+    accent      = default_accent_for_label(slug)
+    tile_images = ensure_minimum_tiles(images, 12)
+    canvas      = build_tilted_grid(
+        tile_images, CANVAS_W, CANVAS_H, scale=1.0,
+        focus_x=FOCUS_X, focus_y=FOCUS_Y,
+    )
+    return apply_gradient(canvas, accent)
+
+# ─── Hero Banner (focused / cover) ────────────────────────────────────────────────────────────
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -488,7 +623,6 @@ def _load_font(size: int, font_path: str | None = None):
 
 
 def _text_bbox(text: str, font) -> tuple[int, int]:
-    """Return (width, height) of the rendered text string."""
     dummy = Image.new("RGB", (1, 1))
     draw  = ImageDraw.Draw(dummy)
     bb    = draw.textbbox((0, 0), text, font=font)
@@ -496,12 +630,12 @@ def _text_bbox(text: str, font) -> tuple[int, int]:
 
 
 def _fit_font(text: str, max_w: int, max_h: int, font_path: str | None):
-    """Binary-search for the largest font size where text fits in max_w x max_h."""
+    """Binary-search for the largest font size that fits text within max_w x max_h."""
     lo, hi = 28, 300
     best   = _load_font(lo, font_path)
     while lo <= hi:
-        mid = (lo + hi) // 2
-        f   = _load_font(mid, font_path)
+        mid    = (lo + hi) // 2
+        f      = _load_font(mid, font_path)
         tw, th = _text_bbox(text, f)
         if tw <= max_w and th <= max_h:
             best = f
@@ -511,21 +645,28 @@ def _fit_font(text: str, max_w: int, max_h: int, font_path: str | None):
     return best
 
 
+def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    iw, ih   = img.size
+    target_r = target_w / target_h
+    src_r    = iw / ih
+    if src_r > target_r:
+        new_w = int(ih * target_r)
+        return img.crop(((iw - new_w) // 2, 0, (iw - new_w) // 2 + new_w, ih))
+    new_h = int(iw / target_r)
+    return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
+
+
 def _make_left_gradient(w: int, h: int, solid_pct: float = 0.25) -> Image.Image:
-    """
-    Solid black for the leftmost solid_pct of the width, then a smooth
-    cubic ease-out curve fading to transparent by ~65% of the width.
-    """
-    grad   = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    pixels = grad.load()
+    """Solid black to cubic ease-out to transparent over the left 65% of width."""
+    grad      = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    pixels    = grad.load()
     solid_end = int(w * solid_pct)
     fade_end  = int(w * 0.65)
-
     for x in range(fade_end):
         if x <= solid_end:
             alpha = 255
         else:
-            t     = (x - solid_end) / (fade_end - solid_end)  # 0 -> 1
+            t     = (x - solid_end) / (fade_end - solid_end)
             alpha = int(255 * (1.0 - t) ** 2.2)
         for y in range(h):
             pixels[x, y] = (0, 0, 0, alpha)
@@ -542,33 +683,18 @@ def _render_glow_text(
     glow_radius: int = 22,
     layer_opacity: float = 0.88,
 ) -> Image.Image:
-    """
-    Composite text with an outer glow onto canvas.
-    Glow is built by blurring the text silhouette in two passes
-    (wide + narrow) and compositing beneath the sharp text layer.
-    The entire overlay (glow + text) is blended at layer_opacity.
-    """
-    size = canvas.size
-
-    # Glow: wide pass + narrow pass stacked for a pronounced halo
-    glow_base = Image.new("RGBA", size, (0, 0, 0, 0))
-    ImageDraw.Draw(glow_base).text(pos, text, font=font,
-                                   fill=(*glow_rgb, 230))
+    """Composite text with dual-pass Gaussian glow onto canvas."""
+    size        = canvas.size
+    glow_base   = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(glow_base).text(pos, text, font=font, fill=(*glow_rgb, 230))
     glow_wide   = glow_base.filter(ImageFilter.GaussianBlur(radius=glow_radius))
     glow_narrow = glow_base.filter(ImageFilter.GaussianBlur(radius=glow_radius // 2))
     glow_layer  = Image.alpha_composite(glow_wide, glow_narrow)
-
-    # Sharp text layer
-    text_layer = Image.new("RGBA", size, (0, 0, 0, 0))
-    ImageDraw.Draw(text_layer).text(pos, text, font=font,
-                                    fill=(*text_rgb, 255))
-
-    # Build overlay: glow first, then crisp text on top
+    text_layer  = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(text_layer).text(pos, text, font=font, fill=(*text_rgb, 255))
     overlay = Image.alpha_composite(glow_layer, text_layer)
-
-    # Blend overlay onto canvas at layer_opacity
-    base   = canvas.convert("RGBA")
-    result = Image.alpha_composite(base, overlay)
+    base    = canvas.convert("RGBA")
+    result  = Image.alpha_composite(base, overlay)
     if layer_opacity < 1.0:
         result = Image.blend(base, result, layer_opacity)
     return result
@@ -584,8 +710,7 @@ def _render_plain_text(
 ) -> Image.Image:
     """Composite plain text (no glow) onto canvas at layer_opacity."""
     text_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(text_layer).text(pos, text, font=font,
-                                    fill=(*text_rgb, 255))
+    ImageDraw.Draw(text_layer).text(pos, text, font=font, fill=(*text_rgb, 255))
     base   = canvas.convert("RGBA")
     result = Image.alpha_composite(base, text_layer)
     if layer_opacity < 1.0:
@@ -600,32 +725,27 @@ def render_hero_banner(
 ) -> Image.Image:
     """
     Compose a 1920x1080 hero banner:
-      1. Crop/scale backdrop to fill the canvas.
-      2. Apply left-side gradient (solid black -> transparent at ~65% width).
-      3. Fit uppercase catalog_slug text into the left third, vertically centred.
-      4. Render text with outer glow (focused) or without (cover).
+      1. Crop/scale backdrop to fill canvas (accepts any PIL Image mode/size).
+      2. Apply left-side gradient (solid black to transparent at ~65% width).
+      3. Fit ALL-CAPS catalog_slug text into the left third, vertically centred.
+      4. Render with outer glow (focused) or without (cover).
     Returns an RGB Image.
     """
-    # 1. Full-bleed backdrop
-    bg = _crop_to_ratio(backdrop, CANVAS_W, CANVAS_H).resize(
+    bg = _crop_to_ratio(backdrop.convert("RGBA"), CANVAS_W, CANVAS_H).resize(
         (CANVAS_W, CANVAS_H), Image.LANCZOS
-    ).convert("RGBA")
-
-    # 2. Left gradient
+    )
     bg = Image.alpha_composite(bg, _make_left_gradient(CANVAS_W, CANVAS_H, solid_pct=0.25))
 
-    # 3. Fit text into left-third zone (with 60 px margins)
     label     = catalog_slug.upper()
     font_path = _find_font_path()
-    max_tw    = int(CANVAS_W * 0.33) - 80   # available width inside left third
-    max_th    = int(CANVAS_H * 0.45)        # cap at 45% of height
+    max_tw    = int(CANVAS_W * 0.33) - 80
+    max_th    = int(CANVAS_H * 0.45)
     font      = _fit_font(label, max_tw, max_th, font_path)
 
-    tw, th = _text_bbox(label, font)
-    x = 60                          # left margin
-    y = (CANVAS_H - th) // 2       # vertically centred
+    _, th = _text_bbox(label, font)
+    x = 60
+    y = (CANVAS_H - th) // 2
 
-    # 4. Render
     if with_glow:
         result = _render_glow_text(bg, label, font, (x, y), layer_opacity=0.88)
     else:
@@ -655,8 +775,7 @@ def assets_exist(folder: str, slug: str) -> bool:
 
 def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
     name = catalog.get("name", slug)
-    # Correct path: collections/{folder}/{asset_type}/{slug}.jpg
-    base = COLLECTIONS_DIR / folder
+    base = COLLECTIONS_DIR / folder   # collections/{folder}/
 
     log.info("")
     log.info("━" * 62)
@@ -664,7 +783,7 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
     log.info("Output   : %s/{backdrop,cover,focused}/%s.jpg", base, slug)
     log.info("━" * 62)
 
-    # Initialize all asset-type directories; title/ is never written by automation
+    # Initialise all asset-type directories; title/ is never written by automation.
     for asset_type in ("backdrop", "cover", "focused", "title"):
         (base / asset_type).mkdir(parents=True, exist_ok=True)
 
@@ -672,7 +791,6 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
         log.info("  All assets already exist — skipping (use --force to regenerate).")
         return
 
-    # Fetch backdrops — mixed from all catalogSources (movies + series combined)
     log.info("  Fetching backdrop artwork …")
     backdrops, top_backdrop = fetch_all_backdrops(catalog)
 
@@ -682,25 +800,25 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool) -> None:
 
     log.info("  Fetched %d backdrop image(s).", len(backdrops))
 
-    # ── A. backdrop/{slug}.jpg — landscape collage grid ───────────────────────
-    log.info("  Rendering collage backdrop …")
-    collage = render_collage_backdrop(backdrops)
-    save_dual(collage, base / "backdrop" / slug)
+    # ── A. backdrop/{slug}.jpg — Prism tilted-grid collage ──────────────────────
+    log.info("  Rendering Prism backdrop …")
+    prism = render_prism_backdrop(backdrops, slug)
+    save_dual(prism, base / "backdrop" / slug)
     log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
-    # ── B. focused/{slug}.jpg — hero banner with outer glow ───────────────────
+    # ── B. focused/{slug}.jpg — hero banner (top backdrop) + glow text ──────────
     log.info("  Rendering focused banner …")
     focused = render_hero_banner(top_backdrop, slug, with_glow=True)
     save_dual(focused, base / "focused" / slug)
     log.info("  ✓  focused/%s.jpg + .webp", slug)
 
-    # ── C. cover/{slug}.jpg — hero banner without glow ────────────────────────
+    # ── C. cover/{slug}.jpg — hero banner (top backdrop), no glow ───────────────
     log.info("  Rendering cover banner …")
     cover = render_hero_banner(top_backdrop, slug, with_glow=False)
     save_dual(cover, base / "cover" / slug)
     log.info("  ✓  cover/%s.jpg + .webp", slug)
 
-    # ── D. title/ — initialized above; never written to by automation ─────────
+    # ── D. title/ — initialised above; never written by automation ───────────────
     log.info("  title/ initialized (manual assets preserved).")
 
 # ─── CLI & Entry Point ───────────────────────────────────────────────────────────────
@@ -758,7 +876,7 @@ Target examples:
         cat_id = catalog.get("id", "")
         parsed = parse_collection_id(cat_id)
         if parsed is None:
-            continue                        # skip non-collections IDs silently
+            continue
         folder, slug = parsed
         if target == "all" or target == folder or target == slug:
             matched.append((catalog, folder, slug))

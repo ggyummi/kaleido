@@ -184,20 +184,28 @@ _CINEMETA_ID = {
 def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
     """
     Fetch metas from a Stremio addon catalog endpoint (unauthenticated GET).
-    With AIOMETADATA_URL: calls {instance}/catalog/{type}/{id}.json.
-    Without:              falls back to Cinemeta top (generic popular content).
+
+    Priority:
+      1. AIOMETADATA_URL set → call {instance}/catalog/{type}/{id}.json
+         If the call fails (404, 5xx, network error), fall through to step 2.
+      2. Cinemeta public addon → /catalog/{type}/top.json
     """
     if AIOMETADATA_URL:
         url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
-    else:
-        cinemeta_id = _CINEMETA_ID.get(media_type, "top")
-        url = f"{CINEMETA_URL}/catalog/{media_type}/{cinemeta_id}.json"
-        if catalog_id not in ("top", "top.byReviews"):
-            log.info(
-                "    No AIOMETADATA_URL — mapping '%s' to Cinemeta '%s'",
-                catalog_id, cinemeta_id,
-            )
-    log.info("    GET %s", url)
+        log.info("    GET %s", url)
+        data = safe_get(url)
+        if data is not None:
+            metas = data.get("metas", [])
+            log.info("    → %d meta(s)", len(metas))
+            return metas
+        log.warning(
+            "    AIOMETADATA fetch failed for '%s/%s' — falling back to Cinemeta.",
+            media_type, catalog_id,
+        )
+
+    cinemeta_id = _CINEMETA_ID.get(media_type, "top")
+    url = f"{CINEMETA_URL}/catalog/{media_type}/{cinemeta_id}.json"
+    log.info("    GET %s (Cinemeta fallback)", url)
     data  = safe_get(url)
     metas = (data or {}).get("metas", [])
     log.info("    → %d meta(s)", len(metas))

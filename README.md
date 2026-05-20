@@ -6,21 +6,25 @@ Automated pipeline that generates cinematic catalog assets for [Nuvio TV](https:
 
 ## What this repo produces
 
-For each catalog defined in `nuvio-collections.json`, the pipeline generates three asset types:
+For each catalog defined in `nuvio-collections.json`, the pipeline generates five asset types:
 
 ```
 collections/
 └── {folder}/
     ├── backdrop/
-    │   ├── {catalog}.jpg    ← Prism 3D tilted-grid collage (1920×1080)
-    │   └── {catalog}.webp
+    │   ├── {catalog}.jpg          ← Prism 3D tilted-grid collage (1920×1080)
+    │   ├── {catalog}.webp
+    │   ├── {catalog}_tilt.jpg     ← T1 perspective-warp + −10° rotation
+    │   ├── {catalog}_tilt.webp
+    │   ├── {catalog}_flat.jpg     ← T1 tilt-only, no perspective warp
+    │   └── {catalog}_flat.webp
     ├── focused/
-    │   ├── {catalog}.jpg    ← hero banner + glow text — selected/hover state
+    │   ├── {catalog}.jpg          ← hero banner + glow text — selected/hover state
     │   └── {catalog}.webp
     ├── cover/
-    │   ├── {catalog}.jpg    ← hero banner, no glow — idle/unfocused state
+    │   ├── {catalog}.jpg          ← hero banner, no glow — idle/unfocused state
     │   └── {catalog}.webp
-    └── title/               ← manual-only; automation never writes here
+    └── title/                     ← manual-only; automation never writes here
 ```
 
 The visual difference between `focused/` and `cover/` creates the pop effect when a user scrolls through a row in Nuvio TV.
@@ -29,15 +33,33 @@ The visual difference between `focused/` and `cover/` creates the pop effect whe
 
 ## Asset rendering
 
-### Backdrop — Prism tilted-grid engine
+### Backdrop — three renders per catalog
 
-The backdrop is a 1920×1080 Prism-style 3D collage adapted from [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup):
+All three backdrop variants reuse the same pool of images fetched from `catalogSources` — no additional HTTP requests are made.
+
+#### Prism tilted-grid (`{catalog}.jpg`)
+
+Adapted from [luckynumb3rs/stremio-perfect-setup](https://github.com/luckynumb3rs/stremio-perfect-setup):
 
 - A 10° clockwise-tilted staggered grid of rounded-corner image tiles
 - Up to 40 backdrop images fetched from all `catalogSources` (movies + series mixed into one pool, deduplicated)
 - Best images placed nearest the focal point (centre-screen, slightly below midline)
 - Four-pass gradient overlay: dark left edge, dark bottom vignette, dark bottom-left corner, accent-coloured top-right glow
 - Accent colour is deterministic per catalog name (HSV, seed derived from label characters)
+
+#### T1 perspective-warp (`{catalog}_tilt.jpg`)
+
+Ported from [bramst0ne/prism-wallpapers](https://github.com/bramst0ne/prism-wallpapers) `backdrop_T1.py`:
+
+- Row-staggered landscape tile grid (400 px wide tiles at 1080p, 8 px gap)
+- Full 3D perspective warp: `POV_X=1.0, POV_Y=-1.0, WARP_STRENGTH=0.37`
+- −10° canvas rotation anchored to the pan-shifted focal centre
+- Depth-of-field blur keyed to `(0.75, 0.25)` focal point
+- Left-fade opacity gradient + dark bottom vignette + accent glow
+
+#### T1 flat-tilt (`{catalog}_flat.jpg`)
+
+Ported from `backdrop_T1_flat.py` — identical to the tilt variant but with perspective warp disabled (`POV_X=0, POV_Y=0, WARP_STRENGTH=0`) and focal centre shifted to `(0.75, 0.50)`. Produces a cleaner, flatter look suitable for UI contexts where strong depth is distracting.
 
 ### Focused / Cover — hero banner
 
@@ -143,7 +165,7 @@ The `generate-assets.yml` workflow runs the following steps:
 1. **Checkout** — full history clone
 2. **Python 3.11** — set up with pip cache
 3. **Font install** — NimbusSans Bold (Helvetica Neue equivalent) + Liberation Sans fallback
-4. **Dependencies** — `pip install requests Pillow`
+4. **Dependencies** — `pip install -r requirements.txt` (requests, Pillow, numpy)
 5. **Validate** — confirms `nuvio-collections.json` exists and has valid `collections.*` entries
 6. **Generate** — runs `generate_catalog_assets.py --target <input> [--force]`
 7. **Commit & push** — stages only `backdrop/`, `focused/`, `cover/` assets and `title/.gitkeep` placeholders; commits with a summary line
@@ -174,7 +196,7 @@ python generate_catalog_assets.py --target netflix
 python generate_catalog_assets.py --target all --force
 ```
 
-Dependencies: `requests`, `Pillow` — no other packages required. No authentication tokens are sent in HTTP requests.
+Dependencies: `requests`, `Pillow`, `numpy` — see `requirements.txt`. No authentication tokens are sent in HTTP requests.
 
 ---
 

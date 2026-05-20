@@ -27,6 +27,7 @@ import io
 import itertools
 import math
 import os
+import random
 import sys
 import json
 import time
@@ -34,6 +35,7 @@ import logging
 import argparse
 from pathlib import Path
 
+import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -231,8 +233,7 @@ def fetch_fanart_logo(imdb_id: str, media_type: str) -> "Image.Image | None":
     if not url:
         return None
 
-    img = download_image(url)
-    return img.convert("RGBA") if img else None
+    return _download_logo_rgba(url)
 
 
 def composite_logo_on_tile(tile: Image.Image, logo: Image.Image) -> Image.Image:
@@ -300,6 +301,31 @@ def download_image(url: str) -> Image.Image | None:
         return Image.open(io.BytesIO(r.content)).convert("RGB")
     except Exception as exc:
         log.warning("Download failed (%s): %s", url, exc)
+        return None
+
+
+def _download_logo_rgba(url: str) -> "Image.Image | None":
+    """
+    Download a logo image keeping its original alpha channel.
+    Fanart.tv serves HD logos as PNGs with transparency; if the fetched image
+    has no alpha channel (e.g. an accidental JPEG), log a warning and return None.
+    """
+    try:
+        r = requests.get(url, timeout=TIMEOUT)
+        r.raise_for_status()
+        img = Image.open(io.BytesIO(r.content))
+        # Palette PNGs with a transparency entry can be converted cleanly
+        if img.mode == "P" and "transparency" in img.info:
+            return img.convert("RGBA")
+        if img.mode not in ("RGBA", "LA"):
+            log.warning(
+                "Fanart.tv logo has no alpha channel (mode=%s) — skipping: %s",
+                img.mode, url,
+            )
+            return None
+        return img.convert("RGBA")
+    except Exception as exc:
+        log.warning("Logo download failed (%s): %s", url, exc)
         return None
 
 # ─── JSON Parsing ──────────────────────────────────────────────────────────────────────────────
@@ -820,6 +846,379 @@ def render_prism_backdrop(
     )
     return apply_gradient(canvas, accent)
 
+# ─── T1 Backdrop Engine ──────────────────────────────────────────────────────────────────────
+#
+# Rendering functions extracted from bramst0ne/prism-wallpapers:
+#   backdrop_T1.py      → perspective warp + −10° rotation  (_tilt output)
+#   backdrop_T1_flat.py → tilt only, no perspective warp    (_flat output)
+#
+# TMDB/MDBList fetching, CLI argument parsing, and file saving from those scripts
+# are intentionally omitted — this pipeline already handles all of that.
+# Output resolution: 1920×1080 only (no 4K).
+
+
+class _T1Cfg:
+    """Configuration bundle for one T1 render pass (tilt or flat)."""
+
+    __slots__ = (
+        "tilt_deg", "offset_x", "offset_y",
+        "landscape_w", "gap", "card_radius",
+        "fade_left", "fade_right",
+        "pov_x", "pov_y", "warp_strength",
+        "dof_blur_max", "dof_focus_x", "dof_focus_y", "dof_falloff",
+        "focus_x", "focus_y", "focus_radius", "stagger_axis",
+    )
+
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+
+
+# backdrop_T1.py — full perspective warp + −10° tilt
+_T1_TILT_CFG = _T1Cfg(
+    tilt_deg=-10,   offset_x=170,    offset_y=-80,
+    landscape_w=400, gap=8,          card_radius=8,
+    fade_left=0.30, fade_right=1.00,
+    pov_x=1.0,      pov_y=-1.0,     warp_strength=0.37,
+    dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.70,   focus_y=0.20,   focus_radius=0.35,
+    stagger_axis="row",
+)
+
+# backdrop_T1_flat.py — −10° tilt only, perspective warp disabled
+_T1_FLAT_CFG = _T1Cfg(
+    tilt_deg=-10,   offset_x=170,    offset_y=-80,
+    landscape_w=400, gap=8,          card_radius=8,
+    fade_left=0.30, fade_right=1.00,
+    pov_x=0.0,      pov_y=0.0,      warp_strength=0.0,
+    dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.75,   focus_y=0.50,   focus_radius=0.35,
+    stagger_axis="row",
+)
+
+
+def _t1_rounded_mask(w: int, h: int, radius: int) -> Image.Image:
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=radius, fill=255)
+    return mask
+
+
+def _t1_make_tile(
+    img: Image.Image, tw: int, th: int, opacity: float, cfg: "_T1Cfg"
+) -> Image.Image:
+    iw, ih = img.size
+    tr = tw / th
+    sr = iw / ih
+    if sr > tr:
+        nw  = int(ih * tr)
+        img = img.crop(((iw - nw) // 2, 0, (iw - nw) // 2 + nw, ih))
+    else:
+        nh  = int(iw / tr)
+        img = img.crop((0, (ih - nh) // 2, iw, (ih - nh) // 2 + nh))
+    img = img.resize((tw, th), Image.LANCZOS)
+    r   = max(2, int(cfg.card_radius * tw / max(cfg.landscape_w, 1)))
+    out = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    out.paste(img, mask=_t1_rounded_mask(tw, th, r))
+    if opacity < 1.0:
+        rc, gc, bc, ac = out.split()
+        ac = ac.point(lambda v: int(v * opacity))
+        out = Image.merge("RGBA", (rc, gc, bc, ac))
+    return out
+
+
+def _t1_build_layout(
+    landscape_imgs: "list[Image.Image]",
+    canvas_w: int,
+    canvas_h: int,
+    scale: float,
+    cfg: "_T1Cfg",
+) -> "tuple[Image.Image, int, int]":
+    lw  = int(cfg.landscape_w * scale)
+    lh  = int(round(lw * 9 / 16))
+    gap = int(cfg.gap * scale)
+
+    bleed_x   = (lw + gap) * 3
+    bleed_y   = lh * 2 + gap * 4
+    stagger_x = (lw + gap) // 2
+    stagger_y = (lh + gap) // 2
+
+    over_w = canvas_w + bleed_x * 2
+    over_h = canvas_h + bleed_y * 2
+    ox     = bleed_x
+    oy     = bleed_y
+    canvas = Image.new("RGBA", (over_w, over_h), (10, 12, 16, 255))
+
+    l_cutoff        = max(1, int(len(landscape_imgs) * 0.35))
+    pri_landscapes  = landscape_imgs[:l_cutoff]
+    rest_landscapes = landscape_imgs[l_cutoff:]
+
+    rng            = random.Random(42)
+    tiles_to_place: list[dict] = []
+
+    if cfg.stagger_axis == "row":
+        y       = -bleed_y + oy
+        row_idx = 0
+        while y < over_h:
+            row_shift = stagger_x if (row_idx % 2 == 1) else 0
+            x = -bleed_x + row_shift + ox
+            while x < over_w:
+                screen_x     = x - ox + (lw * 0.5)
+                screen_y     = y - oy + (lh * 0.5)
+                norm_x       = screen_x / canvas_w
+                norm_y       = screen_y / canvas_h
+                depth        = max(0.0, min(1.0, norm_x))
+                opacity      = cfg.fade_left + (cfg.fade_right - cfg.fade_left) * depth
+                dist_focus   = math.hypot(norm_x - cfg.focus_x, norm_y - cfg.focus_y)
+                is_focal     = dist_focus <= cfg.focus_radius
+                is_on_screen = (0.0 <= norm_x <= 1.0) and (0.0 <= norm_y <= 1.0)
+                tiles_to_place.append({
+                    "x": x, "y": y, "w": lw, "h": lh, "opacity": opacity,
+                    "is_focal": is_focal, "is_on_screen": is_on_screen,
+                })
+                x += lw + gap
+            y += lh + gap
+            row_idx += 1
+    else:
+        x       = -bleed_x
+        col_idx = 0
+        columns: list[dict] = []
+        while x < canvas_w + bleed_x:
+            columns.append({"x": x, "w": lw, "stagger": col_idx % 2 == 1})
+            x += lw + gap
+            col_idx += 1
+        for col in columns:
+            col_x = col["x"] + ox
+            col_w = col["w"]
+            shift = stagger_y if col["stagger"] else 0
+            y     = -bleed_y + shift + oy
+            while y < over_h:
+                th           = max(4, int(col_w * 9 / 16))
+                screen_x     = col_x - ox + (col_w * 0.5)
+                screen_y     = y - oy + (th * 0.5)
+                norm_x       = screen_x / canvas_w
+                norm_y       = screen_y / canvas_h
+                depth        = max(0.0, min(1.0, norm_x))
+                opacity      = cfg.fade_left + (cfg.fade_right - cfg.fade_left) * depth
+                dist_focus   = math.hypot(norm_x - cfg.focus_x, norm_y - cfg.focus_y)
+                is_focal     = dist_focus <= cfg.focus_radius
+                is_on_screen = (0.0 <= norm_x <= 1.0) and (0.0 <= norm_y <= 1.0)
+                tiles_to_place.append({
+                    "x": col_x, "y": y, "w": col_w, "h": th, "opacity": opacity,
+                    "is_focal": is_focal, "is_on_screen": is_on_screen,
+                })
+                y += th + gap
+
+    tiles_to_place.sort(key=lambda t: (not t["is_on_screen"], not t["is_focal"]))
+
+    unique_pri  = list(reversed(pri_landscapes))
+    unique_rest = list(reversed(rest_landscapes))
+    repeat_pri  = list(pri_landscapes)
+    repeat_rest = list(rest_landscapes)
+    rng.shuffle(repeat_pri)
+    rng.shuffle(repeat_rest)
+    pri_idx  = 0
+    rest_idx = 0
+
+    for t in tiles_to_place:
+        if t["is_focal"]:
+            if unique_pri:
+                src = unique_pri.pop()
+            else:
+                src = repeat_pri[pri_idx % len(repeat_pri)]
+                pri_idx += 1
+        else:
+            if unique_rest:
+                src = unique_rest.pop()
+            elif repeat_rest:
+                src = repeat_rest[rest_idx % len(repeat_rest)]
+                rest_idx += 1
+            else:
+                # rest pool empty (very few images) — reuse pri pool
+                src = repeat_pri[pri_idx % len(repeat_pri)]
+                pri_idx += 1
+        tile = _t1_make_tile(src, t["w"], t["h"], opacity=t["opacity"], cfg=cfg)
+        canvas.paste(tile, (int(t["x"]), int(t["y"])), tile)
+
+    return canvas, ox, oy
+
+
+def _t1_perspective_warp(
+    oversized: Image.Image,
+    ox: int,
+    oy: int,
+    out_w: int,
+    out_h: int,
+    cfg: "_T1Cfg",
+) -> Image.Image:
+    if cfg.pov_x == 0.0 and cfg.pov_y == 0.0:
+        scale      = out_w / 1920.0
+        off_x      = int(cfg.offset_x * scale)
+        off_y      = int(cfg.offset_y * scale)
+        shifted_ox = ox - off_x
+        shifted_oy = oy - off_y
+        if cfg.tilt_deg != 0:
+            center_x = shifted_ox + out_w / 2
+            center_y = shifted_oy + out_h / 2
+            rotated  = oversized.rotate(
+                -cfg.tilt_deg, resample=Image.BICUBIC, center=(center_x, center_y)
+            )
+            return rotated.crop((shifted_ox, shifted_oy, shifted_ox + out_w, shifted_oy + out_h))
+        return oversized.crop((shifted_ox, shifted_oy, shifted_ox + out_w, shifted_oy + out_h))
+
+    tl_x, tl_y = 0.0, 0.0
+    tr_x, tr_y = float(out_w), 0.0
+    br_x, br_y = float(out_w), float(out_h)
+    bl_x, bl_y = 0.0, float(out_h)
+
+    if cfg.pov_x > 0:
+        inset_y = (out_h * cfg.warp_strength * abs(cfg.pov_x)) / 2
+        tl_y   += inset_y
+        bl_y   -= inset_y
+    elif cfg.pov_x < 0:
+        inset_y = (out_h * cfg.warp_strength * abs(cfg.pov_x)) / 2
+        tr_y   += inset_y
+        br_y   -= inset_y
+
+    if cfg.pov_y > 0:
+        inset_x = (out_w * cfg.warp_strength * abs(cfg.pov_y)) / 2
+        tl_x   += inset_x
+        tr_x   -= inset_x
+    elif cfg.pov_y < 0:
+        inset_x = (out_w * cfg.warp_strength * abs(cfg.pov_y)) / 2
+        bl_x   += inset_x
+        br_x   -= inset_x
+
+    src_pts = [
+        (ox,         oy),
+        (ox + out_w, oy),
+        (ox + out_w, oy + out_h),
+        (ox,         oy + out_h),
+    ]
+    dst_pts = [(tl_x, tl_y), (tr_x, tr_y), (br_x, br_y), (bl_x, bl_y)]
+
+    A: list[list[float]] = []
+    bv: list[float]      = []
+    for (sx, sy), (dx, dy) in zip(src_pts, dst_pts):
+        A.append([dx, dy, 1, 0,  0,  0, -sx * dx, -sx * dy])
+        bv.append(sx)
+        A.append([0,  0,  0, dx, dy, 1, -sy * dx, -sy * dy])
+        bv.append(sy)
+
+    try:
+        coeffs = np.linalg.solve(
+            np.array(A, dtype=np.float64), np.array(bv, dtype=np.float64)
+        )
+        return oversized.transform(
+            (out_w, out_h), Image.PERSPECTIVE, tuple(coeffs), resample=Image.BICUBIC
+        )
+    except Exception:
+        return oversized.crop((ox, oy, ox + out_w, oy + out_h))
+
+
+def _t1_apply_dof(image: Image.Image, scale: float, cfg: "_T1Cfg") -> Image.Image:
+    if cfg.dof_blur_max <= 0:
+        return image
+
+    w, h  = image.size
+    fx    = cfg.dof_focus_x * w
+    fy    = cfg.dof_focus_y * h
+    diag  = math.hypot(w, h)
+
+    xs       = np.linspace(0, w - 1, w, dtype=np.float32)
+    ys       = np.linspace(0, h - 1, h, dtype=np.float32)
+    xg, yg   = np.meshgrid(xs, ys)
+    dist_map = np.sqrt((xg - fx) ** 2 + (yg - fy) ** 2) / diag
+    blur_map = np.clip(dist_map ** cfg.dof_falloff, 0.0, 1.0)
+
+    N      = 5
+    max_r  = cfg.dof_blur_max * scale
+    layers = [
+        image if (i / N) * max_r < 0.5
+        else image.filter(ImageFilter.GaussianBlur(radius=(i / N) * max_r))
+        for i in range(N + 1)
+    ]
+    arrs = [np.array(layer, dtype=np.float32) for layer in layers]
+    out  = np.zeros_like(arrs[0])
+
+    for i in range(N):
+        lo  = i / N
+        hi  = (i + 1) / N
+        in_ = (blur_map >= lo) & (blur_map < hi)
+        t   = ((blur_map - lo) / (hi - lo + 1e-9))[in_]
+        out[in_] = arrs[i][in_] * (1 - t[:, None]) + arrs[i + 1][in_] * t[:, None]
+
+    out[blur_map >= (N - 1) / N] = arrs[N][blur_map >= (N - 1) / N]
+    return Image.fromarray(out.clip(0, 255).astype(np.uint8), image.mode)
+
+
+def _t1_apply_gradient(
+    canvas: Image.Image, accent: "tuple[int, int, int]"
+) -> Image.Image:
+    w, h = canvas.size
+    ar, ag, ab = accent
+
+    def _grad_left(gw: int, gh: int) -> Image.Image:
+        img = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+        px  = img.load()
+        for x in range(int(gw * 0.65)):
+            t = 1.0 - x / (gw * 0.65)
+            a = int(240 * (t ** 1.4))
+            if a:
+                for y in range(gh):
+                    px[x, y] = (6, 8, 12, a)
+        return img
+
+    def _grad_bottom(gw: int, gh: int) -> Image.Image:
+        img = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+        px  = img.load()
+        for y in range(gh):
+            t = max(0.0, (y - gh * 0.55) / (gh * 0.45))
+            a = int(215 * (t ** 1.3))
+            if a:
+                for x in range(gw):
+                    px[x, y] = (6, 8, 12, a)
+        return img
+
+    def _accent_glow(gw: int, gh: int) -> Image.Image:
+        img = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+        dw  = ImageDraw.Draw(img)
+        for i in range(18):
+            t  = i / 18
+            rr = int(math.hypot(gw, gh) * (0.05 + 0.38 * t))
+            aa = int(14 * (1 - t) ** 2.2)
+            if aa:
+                dw.ellipse([gw - rr, -rr, gw + rr, rr], fill=(ar, ag, ab, aa))
+        return img
+
+    left_side   = _grad_left(w // 4, h // 4).resize((w, h), Image.BILINEAR)
+    bottom_side = _grad_bottom(w // 4, h // 4).resize((w, h), Image.BILINEAR)
+    result      = Image.alpha_composite(canvas, left_side)
+    result      = Image.alpha_composite(result, bottom_side)
+    result      = Image.alpha_composite(result, _accent_glow(w, h))
+    return result
+
+
+def render_t1_backdrop(
+    images:  "list[Image.Image]",
+    slug:    str,
+    variant: str,
+) -> Image.Image:
+    """
+    Render a 1920×1080 T1-style backdrop from pre-fetched PIL Images.
+    variant='tilt' → perspective warp + −10° rotation  (backdrop_T1.py style).
+    variant='flat' → −10° tilt only, no perspective    (backdrop_T1_flat.py style).
+    Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
+    """
+    cfg    = _T1_TILT_CFG if variant == "tilt" else _T1_FLAT_CFG
+    accent = default_accent_for_label(slug)
+    imgs   = ensure_minimum_tiles(images, 4)
+
+    over, ox, oy = _t1_build_layout(imgs, CANVAS_W, CANVAS_H, scale=1.0, cfg=cfg)
+    warped       = _t1_perspective_warp(over, ox, oy, CANVAS_W, CANVAS_H, cfg)
+    dof          = _t1_apply_dof(warped, scale=1.0, cfg=cfg)
+    return _t1_apply_gradient(dof, accent)
+
+
 # ─── Hero Banner (focused / cover) ──────────────────────────────────────────────────────────────────────────────────
 
 def _find_font_path() -> str | None:
@@ -983,18 +1382,21 @@ def save_dual(img: Image.Image, base_path: Path) -> None:
 
 def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
     """Return True if all outputs for the given mode already exist on disk."""
-    base = COLLECTIONS_DIR / folder
-    if mode == "backdrop":
-        types = ("backdrop",)
-    elif mode == "covers":
-        types = ("focused", "cover")
-    else:
-        types = ("backdrop", "focused", "cover")
-    return all(
-        (base / t / f"{slug}{ext}").exists()
-        for t in types
-        for ext in (".jpg", ".webp")
-    )
+    base: Path        = COLLECTIONS_DIR / folder
+    checks: list[Path] = []
+
+    if mode in ("all", "backdrop"):
+        for ext in (".jpg", ".webp"):
+            checks.append(base / "backdrop" / f"{slug}{ext}")
+            checks.append(base / "backdrop" / f"{slug}_tilt{ext}")
+            checks.append(base / "backdrop" / f"{slug}_flat{ext}")
+
+    if mode in ("all", "covers"):
+        for t in ("focused", "cover"):
+            for ext in (".jpg", ".webp"):
+                checks.append(base / t / f"{slug}{ext}")
+
+    return all(p.exists() for p in checks)
 
 # ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────────────────
 
@@ -1030,6 +1432,16 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         prism = render_prism_backdrop(backdrops, slug, logos=logos)
         save_dual(prism, base / "backdrop" / slug)
         log.info("  ✓  backdrop/%s.jpg + .webp", slug)
+
+        log.info("  Rendering T1 tilt backdrop …")
+        t1_tilt = render_t1_backdrop(backdrops, slug, "tilt")
+        save_dual(t1_tilt, base / "backdrop" / f"{slug}_tilt")
+        log.info("  ✓  backdrop/%s_tilt.jpg + .webp", slug)
+
+        log.info("  Rendering T1 flat backdrop …")
+        t1_flat = render_t1_backdrop(backdrops, slug, "flat")
+        save_dual(t1_flat, base / "backdrop" / f"{slug}_flat")
+        log.info("  ✓  backdrop/%s_flat.jpg + .webp", slug)
 
     if do_covers:
         # ALWAYS fetch a fresh textless backdrop (the most recently added /

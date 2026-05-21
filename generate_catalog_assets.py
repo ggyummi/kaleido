@@ -1528,15 +1528,15 @@ def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
     Composite a smooth cinematic bottom-gradient vignette onto `img` then
     render the catalog title centred in the bottom 20% of the image.
 
-    The gradient starts fully transparent at ~55% of image height and fades
+    The gradient starts fully transparent at ~72% of image height and fades
     to solid near-black (#0a0a0a) by the bottom edge — no hard panel boundary.
     """
     w, h   = img.size
     result = img.convert("RGBA")
 
-    # Gradient: transparent at 55%, near-black (#0a0a0a) at 100%
+    # Gradient: transparent at 72%, near-black (#0a0a0a) at 100%
     grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
-    grad_start = int(h * 0.55)
+    grad_start = int(h * 0.72)
     if grad_start < h:
         ys    = np.arange(0, h - grad_start, dtype=np.float32)
         t     = ys / max(1.0, h - grad_start - 1)

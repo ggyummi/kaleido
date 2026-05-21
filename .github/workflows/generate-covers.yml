@@ -6,14 +6,15 @@
 # Generates Apple TV+-style cover cards for each matched catalog.
 # Four files are written per catalog:
 #
-#   collections/{folder}/focused/{catalog}_landscape.jpg(.webp)   1920×1080 — dimmed + frosted glass panel
-#   collections/{folder}/focused/{catalog}_portrait.jpg(.webp)     680×1000  — dimmed + frosted glass panel
-#   collections/{folder}/cover/{catalog}_landscape.jpg(.webp)     1920×1080 — full brightness + frosted glass panel
-#   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)       680×1000  — full brightness + frosted glass panel
+#   collections/{folder}/focused/{catalog}_landscape.jpg(.webp)   1920×1080 — dimmed + cinematic gradient + title
+#   collections/{folder}/focused/{catalog}_portrait.jpg(.webp)     680×1000  — dimmed + cinematic gradient + title
+#   collections/{folder}/cover/{catalog}_landscape.jpg(.webp)     1920×1080 — full brightness + gradient + title
+#   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)       680×1000  — full brightness + gradient + title
 #
-# The frosted glass panel occupies the bottom 28% of each card and displays
-# the full catalog title (emoji stripped, original casing) centred within it.
-# "focused" cards dim the backdrop to 50% brightness before the panel is applied.
+# A smooth bottom gradient fades from transparent at ~55% image height to near-black
+# at the bottom edge. The catalog title (emoji stripped, original casing) sits centred
+# horizontally in the bottom 20% of the image.
+# "focused" cards dim the backdrop to 50% brightness before the gradient is applied.
 #
 # Secrets  (Settings → Secrets and variables → Actions)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,17 +65,17 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # ── 3. Font — required for ALL-CAPS label rendering ──────────────────────
-      # NimbusSans-Bold.otf is the open-source metric equivalent of
-      # Helvetica Neue Bold; LiberationSans-Bold is the TTF fallback.
-      - name: "🖋 Install Helvetica-equivalent font (NimbusSans Bold)"
+      # ── 3. Font — required for label rendering ───────────────────────────────
+      # NimbusSans-Regular.otf is used for catalog title text;
+      # LiberationSans-Regular is the TTF fallback.
+      - name: "🖋 Install Helvetica-equivalent font (NimbusSans Regular)"
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             fonts-urw-base35 \
             fonts-liberation
           fc-cache -fv
-          fc-list | grep -i "nimbus\|liberation" | grep -i bold | head -10 || true
+          fc-list | grep -i "nimbus\|liberation" | grep -i regular | head -10 || true
 
       # ── 4. Python dependencies ───────────────────────────────────────────────
       - name: "📦 Install Python dependencies"

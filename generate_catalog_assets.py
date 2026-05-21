@@ -8,8 +8,10 @@ artwork from Stremio addon endpoints (or TMDb as fallback), and writes four
 asset types per catalog into a FLAT directory structure:
 
   collections/{folder}/backdrop/{catalog}.jpg(.webp)  — Prism 3D tilted-grid collage
-  collections/{folder}/focused/{catalog}.jpg(.webp)   — hero banner + glow text
-  collections/{folder}/cover/{catalog}.jpg(.webp)     — hero banner, no glow
+  collections/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + cinematic gradient + title (1920×1080)
+  collections/{folder}/focused/{catalog}_portrait.jpg(.webp)   — same, portrait (680×1000)
+  collections/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full brightness + gradient + title (1920×1080)
+  collections/{folder}/cover/{catalog}_portrait.jpg(.webp)     — same, portrait (680×1000)
   collections/{folder}/title/                         — init only; never overwritten
 
 Backdrop images are fetched from ALL catalogSources (movies + series mixed)
@@ -94,13 +96,13 @@ FOCUS_Y     = 0.53 # vertical   focal point fraction (0=top,  1=bottom)
 # ─── Font Candidates ─────────────────────────────────────────────────────────────────────────────
 
 _FONT_CANDIDATES = [
-    "/usr/share/fonts/opentype/urw-base35/NimbusSans-Bold.otf",
-    "/usr/share/fonts/urw-base35/NimbusSans-Bold.otf",
-    "/usr/share/fonts/type1/urw-base35/NimbusSans-Bold.otf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
+    "/usr/share/fonts/urw-base35/NimbusSans-Regular.otf",
+    "/usr/share/fonts/type1/urw-base35/NimbusSans-Regular.otf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
 # ─── Environment Validation ─────────────────────────────────────────────────────────────────
@@ -1443,7 +1445,7 @@ def strip_emoji(text: str) -> str:
     return emoji_re.sub("", text).strip()
 
 
-# ─── Cover / Focused Cards (Apple TV+ style frosted-glass panel) ──────────────────────────────
+# ─── Cover / Focused Cards (Apple TV+ style cinematic gradient + title) ─────────────────────
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -1510,7 +1512,7 @@ def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Im
     ys = np.linspace(1.0, 0.0, h, dtype=np.float32)
     xg, yg = np.meshgrid(xs, ys)
     mask  = (xg + yg) * 0.5                                       # [0.0, 1.0] diagonal
-    alpha = ((0.45 + mask * 0.30) * 255).clip(0, 255).astype(np.uint8)  # [0.45, 0.75]
+    alpha = ((0.30 + mask * 0.25) * 255).clip(0, 255).astype(np.uint8)  # [0.30, 0.55]
 
     overlay = np.zeros((h, w, 4), dtype=np.uint8)
     overlay[:, :, 0] = ar
@@ -1521,33 +1523,43 @@ def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Im
     return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
 
 
-def _render_frosted_glass_panel(img: Image.Image, label: str) -> Image.Image:
+def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
     """
-    Composite a frosted-glass panel over the bottom 28% of `img`.
-    Blurs that region, darkens it with a semi-transparent overlay (alpha 90),
-    then centres the catalog title text within the panel.
-    Returns a new RGBA image at the same dimensions as `img`.
+    Composite a smooth cinematic bottom-gradient vignette onto `img` then
+    render the catalog title centred in the bottom 20% of the image.
+
+    The gradient starts fully transparent at ~55% of image height and fades
+    to solid near-black (#0a0a0a) by the bottom edge — no hard panel boundary.
     """
-    w, h      = img.size
-    panel_top = int(h * 0.72)
-    panel_h   = h - panel_top
+    w, h   = img.size
+    result = img.convert("RGBA")
 
-    region  = img.crop((0, panel_top, w, h)).convert("RGBA")
-    blurred = region.filter(ImageFilter.GaussianBlur(radius=max(20, w // 40)))
-    overlay = Image.new("RGBA", (w, panel_h), (0, 0, 0, 90))
-    panel   = Image.alpha_composite(blurred, overlay)
+    # Gradient: transparent at 55%, near-black (#0a0a0a) at 100%
+    grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
+    grad_start = int(h * 0.55)
+    if grad_start < h:
+        ys    = np.arange(0, h - grad_start, dtype=np.float32)
+        t     = ys / max(1.0, h - grad_start - 1)
+        alpha = (255 * np.clip(t ** 1.2, 0.0, 1.0)).astype(np.uint8)
+        grad_arr[grad_start:, :, 0] = 10
+        grad_arr[grad_start:, :, 1] = 10
+        grad_arr[grad_start:, :, 2] = 10
+        grad_arr[grad_start:, :, 3] = alpha[:, np.newaxis]
 
+    result = Image.alpha_composite(result, Image.fromarray(grad_arr, "RGBA"))
+
+    # Title centred horizontally in the bottom 20%
+    text_zone_top = int(h * 0.80)
+    text_zone_h   = h - text_zone_top
     font_path = _find_font_path()
     max_tw    = int(w * 0.90)
-    max_th    = int(panel_h * 0.65)
+    max_th    = int(text_zone_h * 0.60)
     font      = _fit_font(label, max_tw, max_th, font_path)
     tw, th    = _text_bbox(label, font)
     tx        = (w - tw) // 2
-    ty        = (panel_h - th) // 2
-    ImageDraw.Draw(panel).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
+    ty        = text_zone_top + (text_zone_h - th) // 2
+    ImageDraw.Draw(result).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
 
-    result = img.convert("RGBA").copy()
-    result.paste(panel, (0, panel_top))
     return result
 
 
@@ -1562,8 +1574,8 @@ def render_cover_card(
     Render a cover card in Apple TV+ style.
     orientation: 'landscape' (1920x1080) or 'portrait' (680x1000).
     accent_rgb:   deterministic catalog color — bold diagonal gradient overlay.
-    focused=True  → color grade, then dimmed to FOCUSED_DIM, then frosted glass panel.
-    focused=False → color grade, then full-brightness frosted glass panel.
+    focused=True  → color grade, then dimmed to FOCUSED_DIM, then bottom gradient + title.
+    focused=False → color grade, then full-brightness bottom gradient + title.
     Returns an RGB image.
     """
     if orientation == "portrait":
@@ -1579,7 +1591,7 @@ def render_cover_card(
         black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
 
-    return _render_frosted_glass_panel(bg, label).convert("RGB")
+    return _render_bottom_gradient_text(bg, label).convert("RGB")
 
 # ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 
@@ -1677,8 +1689,7 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
             log.warning("  No image available for cover cards — skipping covers.")
             return
 
-        title  = strip_emoji(catalog.get("title") or slug).strip()
-        label  = title or slug
+        label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
         accent = default_accent_for_label(slug)
         log.info("  Cover label: %s  accent: rgb%s", label, accent)
 

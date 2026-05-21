@@ -23,12 +23,12 @@ collections/
     │   ├── {catalog}_t2_flat.jpg   ← T2 mixed P+L columns, tilt-only, no perspective warp
     │   └── {catalog}_t2_flat.webp
     ├── focused/
-    │   ├── {catalog}_landscape.jpg   ← frosted glass panel, dimmed — selected/hover (1920×1080)
+    │   ├── {catalog}_landscape.jpg   ← cinematic gradient + title, dimmed — selected/hover (1920×1080)
     │   ├── {catalog}_landscape.webp
     │   ├── {catalog}_portrait.jpg    ← same, portrait orientation (680×1000)
     │   └── {catalog}_portrait.webp
     ├── cover/
-    │   ├── {catalog}_landscape.jpg   ← frosted glass panel, full brightness — idle (1920×1080)
+    │   ├── {catalog}_landscape.jpg   ← cinematic gradient + title, full brightness — idle (1920×1080)
     │   ├── {catalog}_landscape.webp
     │   ├── {catalog}_portrait.jpg    ← same, portrait orientation (680×1000)
     │   └── {catalog}_portrait.webp
@@ -89,12 +89,11 @@ Ported from `backdrop_T2_flat.py` — identical to the T2 tilt variant but with 
 Each catalog generates four cover variants: landscape (1920×1080) and portrait (680×1000), each in both focused and cover states.
 
 - Top backdrop image from the catalog, cropped and scaled to the output dimensions
-- **Frosted glass panel** occupying the bottom 28% of the image:
-  - Gaussian-blurred backdrop region beneath the panel
-  - Dark semi-transparent overlay (alpha 150) over the blur
-  - Full catalog title (emoji stripped, original casing) centred horizontally and vertically within the panel
-- `focused`: backdrop dimmed to 50% brightness before the panel is applied — the darkened state shown when a card is selected or hovered
-- `cover`: full-brightness backdrop with the frosted glass panel — the idle/unfocused state
+- **Bold color-grade overlay** — a diagonal gradient tinted with a deterministic per-catalog accent color (top-left more vivid, bottom-right lighter), giving a cinematic color-toned look
+- **Cinematic bottom gradient** starting fully transparent at ~55% of image height and fading to near-black (#0a0a0a) at the bottom edge — no hard panel boundary
+- **Catalog title** (emoji stripped, original casing) rendered in regular-weight sans-serif, centred horizontally in the bottom 20% of the image
+- `focused`: backdrop dimmed to 50% brightness before the gradient and title are applied — the darkened state shown when a card is selected or hovered
+- `cover`: full-brightness backdrop with the gradient and title — the idle/unfocused state
 
 ---
 

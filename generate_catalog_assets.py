@@ -849,7 +849,8 @@ def render_prism_backdrop(
 # ─── T1 Backdrop Engine ──────────────────────────────────────────────────────────────────────
 #
 # Rendering functions extracted from bramst0ne/prism-wallpapers:
-#   backdrop_T1.py — perspective warp + −10° rotation
+#   backdrop_T1.py      → perspective warp + −10° rotation  (_t1_tilt output)
+#   backdrop_T1_flat.py → tilt only, no perspective warp    (_t1_flat output)
 #
 # TMDB/MDBList fetching, CLI argument parsing, and file saving from those scripts
 # are intentionally omitted — this pipeline already handles all of that.
@@ -857,7 +858,7 @@ def render_prism_backdrop(
 
 
 class _T1Cfg:
-    """Configuration bundle for a T1 render pass."""
+    """Configuration bundle for one T1 render pass (tilt or flat)."""
 
     __slots__ = (
         "tilt_deg", "offset_x", "offset_y",
@@ -881,6 +882,17 @@ _T1_TILT_CFG = _T1Cfg(
     pov_x=1.0,      pov_y=-1.0,     warp_strength=0.37,
     dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
     focus_x=0.70,   focus_y=0.20,   focus_radius=0.35,
+    stagger_axis="row",
+)
+
+# backdrop_T1_flat.py — −10° tilt only, perspective warp disabled
+_T1_FLAT_CFG = _T1Cfg(
+    tilt_deg=-10,   offset_x=170,    offset_y=-80,
+    landscape_w=400, gap=8,          card_radius=8,
+    fade_left=0.30, fade_right=1.00,
+    pov_x=0.0,      pov_y=0.0,      warp_strength=0.0,
+    dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.75,   focus_y=0.50,   focus_radius=0.35,
     stagger_axis="row",
 )
 
@@ -1193,16 +1205,18 @@ def _t1_apply_gradient(
 def render_t1_backdrop(
     images:  "list[Image.Image]",
     slug:    str,
+    variant: str = "tilt",
     logos:   "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
     """
     Render a 1920×1080 T1-style backdrop from pre-fetched PIL Images.
-    Applies perspective warp + −10° rotation (backdrop_T1.py style).
+    variant='tilt' → perspective warp + −10° rotation  (backdrop_T1.py style).
+    variant='flat' → −10° tilt only, no perspective    (backdrop_T1_flat.py style).
     logos, when provided, is a parallel list to images; each non-None entry is an
     RGBA PNG logo composited onto the bottom-left of its corresponding tile.
     Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
     """
-    cfg    = _T1_TILT_CFG
+    cfg    = _T1_TILT_CFG if variant == "tilt" else _T1_FLAT_CFG
     accent = default_accent_for_label(slug)
 
     # Pair each image with its logo so logos survive the minimum-tile padding step.
@@ -1228,7 +1242,8 @@ def render_t1_backdrop(
 # ─── T2 Backdrop Engine ──────────────────────────────────────────────────────────────────────
 #
 # Rendering functions ported from bramst0ne/prism-wallpapers:
-#   backdrop_T2.py — mixed portrait+landscape columns, perspective warp + −10° rotation
+#   backdrop_T2.py      → mixed portrait+landscape columns, perspective warp + −10° rotation  (_t2_tilt output)
+#   backdrop_T2_flat.py → same column layout, tilt only, no perspective warp                  (_t2_flat output)
 #
 # TMDB/MDBList fetching, CLI argument parsing, and file saving are intentionally omitted.
 # Output resolution: 1920×1080 only (no 4K).
@@ -1236,7 +1251,7 @@ def render_t1_backdrop(
 
 
 class _T2Cfg:
-    """Configuration bundle for a T2 render pass."""
+    """Configuration bundle for one T2 render pass (tilt or flat)."""
 
     __slots__ = (
         "tilt_deg", "offset_x", "offset_y",
@@ -1263,6 +1278,18 @@ _T2_TILT_CFG = _T2Cfg(
     pov_x=1.0,        pov_y=-1.0,           warp_strength=0.37,
     dof_blur_max=10.0, dof_focus_x=0.75,   dof_focus_y=0.25, dof_falloff=1.5,
     focus_x=0.75,     focus_y=0.25,         focus_radius=0.30,
+)
+
+# backdrop_T2_flat.py — mixed P+L columns, −10° tilt only, perspective warp disabled
+_T2_FLAT_CFG = _T2Cfg(
+    tilt_deg=-10,     offset_x=335,         offset_y=100,
+    landscape_w=300,  portrait_w=200,       gap=8,            card_radius=8,
+    col_pattern=["L", "P", "L", "P", "L", "P", "L", "P", "L"],
+    col_stagger=0.35, random_aspect_chance=0.35,
+    fade_left=0.30,   fade_right=1.00,
+    pov_x=0.0,        pov_y=0.0,            warp_strength=0.0,
+    dof_blur_max=10.0, dof_focus_x=0.75,   dof_focus_y=0.25, dof_falloff=1.5,
+    focus_x=0.50,     focus_y=0.0,          focus_radius=0.30,
 )
 
 
@@ -1362,15 +1389,17 @@ def _t2_build_layout(
 def render_t2_backdrop(
     images:  "list[Image.Image]",
     slug:    str,
+    variant: str = "tilt",
     logos:   "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
     """
     Render a 1920×1080 T2-style backdrop from pre-fetched PIL Images.
-    Mixed portrait+landscape columns with perspective warp + −10° rotation.
+    variant='tilt' → mixed portrait+landscape columns, perspective warp + −10° rotation.
+    variant='flat' → same column layout, −10° tilt only, no perspective warp.
     Perspective warp, DOF, and gradient are handled by the shared T1 helpers.
     Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
     """
-    cfg    = _T2_TILT_CFG
+    cfg    = _T2_TILT_CFG if variant == "tilt" else _T2_FLAT_CFG
     accent = default_accent_for_label(slug)
 
     n          = len(images)
@@ -1563,7 +1592,9 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
         for ext in (".jpg", ".webp"):
             checks.append(base / "backdrop" / f"{slug}{ext}")
             checks.append(base / "backdrop" / f"{slug}_t1_tilt{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t1_flat{ext}")
             checks.append(base / "backdrop" / f"{slug}_t2_tilt{ext}")
+            checks.append(base / "backdrop" / f"{slug}_t2_flat{ext}")
 
     if mode in ("all", "covers"):
         for t in ("focused", "cover"):
@@ -1608,14 +1639,24 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s.jpg + .webp", slug)
 
         log.info("  Rendering T1 tilt backdrop …")
-        t1_tilt = render_t1_backdrop(backdrops, slug, logos=logos)
+        t1_tilt = render_t1_backdrop(backdrops, slug, "tilt", logos=logos)
         save_dual(t1_tilt, base / "backdrop" / f"{slug}_t1_tilt")
         log.info("  ✓  backdrop/%s_t1_tilt.jpg + .webp", slug)
 
+        log.info("  Rendering T1 flat backdrop …")
+        t1_flat = render_t1_backdrop(backdrops, slug, "flat", logos=logos)
+        save_dual(t1_flat, base / "backdrop" / f"{slug}_t1_flat")
+        log.info("  ✓  backdrop/%s_t1_flat.jpg + .webp", slug)
+
         log.info("  Rendering T2 tilt backdrop …")
-        t2_tilt = render_t2_backdrop(backdrops, slug, logos=logos)
+        t2_tilt = render_t2_backdrop(backdrops, slug, "tilt", logos=logos)
         save_dual(t2_tilt, base / "backdrop" / f"{slug}_t2_tilt")
         log.info("  ✓  backdrop/%s_t2_tilt.jpg + .webp", slug)
+
+        log.info("  Rendering T2 flat backdrop …")
+        t2_flat = render_t2_backdrop(backdrops, slug, "flat", logos=logos)
+        save_dual(t2_flat, base / "backdrop" / f"{slug}_t2_flat")
+        log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
         # ALWAYS fetch a fresh textless backdrop (the most recently added /

@@ -1497,10 +1497,34 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
     return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
 
 
+def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Image.Image:
+    """
+    Apply a bold diagonal color-grade overlay tinted with accent_rgb.
+    Gradient runs top-left (most vivid, ~75% opacity) to bottom-right
+    (~45% opacity) so the photo reads through cinema-poster style.
+    """
+    w, h = img.size
+    ar, ag, ab = accent_rgb
+
+    xs = np.linspace(1.0, 0.0, w, dtype=np.float32)
+    ys = np.linspace(1.0, 0.0, h, dtype=np.float32)
+    xg, yg = np.meshgrid(xs, ys)
+    mask  = (xg + yg) * 0.5                                       # [0.0, 1.0] diagonal
+    alpha = ((0.45 + mask * 0.30) * 255).clip(0, 255).astype(np.uint8)  # [0.45, 0.75]
+
+    overlay = np.zeros((h, w, 4), dtype=np.uint8)
+    overlay[:, :, 0] = ar
+    overlay[:, :, 1] = ag
+    overlay[:, :, 2] = ab
+    overlay[:, :, 3] = alpha
+
+    return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
+
+
 def _render_frosted_glass_panel(img: Image.Image, label: str) -> Image.Image:
     """
     Composite a frosted-glass panel over the bottom 28% of `img`.
-    Blurs that region, darkens it with a semi-transparent overlay (alpha 150),
+    Blurs that region, darkens it with a semi-transparent overlay (alpha 90),
     then centres the catalog title text within the panel.
     Returns a new RGBA image at the same dimensions as `img`.
     """
@@ -1509,8 +1533,8 @@ def _render_frosted_glass_panel(img: Image.Image, label: str) -> Image.Image:
     panel_h   = h - panel_top
 
     region  = img.crop((0, panel_top, w, h)).convert("RGBA")
-    blurred = region.filter(ImageFilter.GaussianBlur(radius=max(8, w // 100)))
-    overlay = Image.new("RGBA", (w, panel_h), (0, 0, 0, 150))
+    blurred = region.filter(ImageFilter.GaussianBlur(radius=max(20, w // 40)))
+    overlay = Image.new("RGBA", (w, panel_h), (0, 0, 0, 90))
     panel   = Image.alpha_composite(blurred, overlay)
 
     font_path = _find_font_path()
@@ -1532,12 +1556,14 @@ def render_cover_card(
     label: str,
     orientation: str,
     focused: bool,
+    accent_rgb: tuple[int, int, int] = (180, 120, 60),
 ) -> Image.Image:
     """
     Render a cover card in Apple TV+ style.
-    orientation: 'landscape' (1920×1080) or 'portrait' (680×1000).
-    focused=True  → backdrop dimmed to FOCUSED_DIM strength, then frosted glass panel.
-    focused=False → full-brightness backdrop with frosted glass panel only.
+    orientation: 'landscape' (1920x1080) or 'portrait' (680x1000).
+    accent_rgb:   deterministic catalog color — bold diagonal gradient overlay.
+    focused=True  → color grade, then dimmed to FOCUSED_DIM, then frosted glass panel.
+    focused=False → color grade, then full-brightness frosted glass panel.
     Returns an RGB image.
     """
     if orientation == "portrait":
@@ -1548,6 +1574,7 @@ def render_cover_card(
     bg = _crop_to_ratio(backdrop.convert("RGBA"), out_w, out_h).resize(
         (out_w, out_h), Image.LANCZOS
     )
+    bg = _apply_color_grade(bg, accent_rgb)
     if focused:
         black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
@@ -1650,15 +1677,19 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
             log.warning("  No image available for cover cards — skipping covers.")
             return
 
-        title = strip_emoji(catalog.get("title") or slug).strip()
-        label = title or slug
-        log.info("  Cover label: %s", label)
+        title  = strip_emoji(catalog.get("title") or slug).strip()
+        label  = title or slug
+        accent = default_accent_for_label(slug)
+        log.info("  Cover label: %s  accent: rgb%s", label, accent)
 
         for orientation in ("landscape", "portrait"):
             for focused_flag in (True, False):
                 variant = "focused" if focused_flag else "cover"
                 log.info("  Rendering %s %s …", variant, orientation)
-                card = render_cover_card(top_backdrop, label, orientation, focused=focused_flag)
+                card = render_cover_card(
+                    top_backdrop, label, orientation,
+                    focused=focused_flag, accent_rgb=accent,
+                )
                 save_dual(card, base / variant / f"{slug}_{orientation}")
                 log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)
 

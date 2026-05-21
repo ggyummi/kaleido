@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jsDelivr URL Converter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --surface: #17171a;
+    --surface2: #1f1f23;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.15);
+    --text: #f0f0f2;
+    --muted: #6b6b78;
+    --accent: #c8ff57;
+    --accent-dim: rgba(200,255,87,0.12);
+    --accent-dim2: rgba(200,255,87,0.06);
+    --danger: #ff5f5f;
+    --danger-dim: rgba(255,95,95,0.1);
+    --success: #57ffb8;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.25rem;
+    background-image:
+      radial-gradient(ellipse 60% 40% at 50% -10%, rgba(200,255,87,0.07) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 30% at 80% 110%, rgba(200,255,87,0.04) 0%, transparent 60%);
+  }
+
+  .card {
+    width: 100%;
+    max-width: 620px;
+  }
+
+  header {
+    margin-bottom: 2.5rem;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-dim2);
+    border: 1px solid rgba(200,255,87,0.2);
+    border-radius: 100px;
+    padding: 4px 10px;
+    margin-bottom: 1rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  h1 {
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+  }
+
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: border-color 0.2s;
+  }
+
+  .section:focus-within {
+    border-color: var(--border-hover);
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+    -webkit-appearance: none;
+  }
+
+  input[type="text"]::placeholder { color: var(--muted); opacity: 0.6; }
+
+  input[type="text"]:focus {
+    border-color: rgba(200,255,87,0.4);
+    background: rgba(200,255,87,0.03);
+  }
+
+  .output-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin-top: 1rem;
+  }
+
+  .output-box {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 10px 12px;
+    color: var(--accent);
+    word-break: break-all;
+    line-height: 1.6;
+    min-height: 42px;
+  }
+
+  .copy-btn {
+    background: var(--accent-dim);
+    border: 1px solid rgba(200,255,87,0.25);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    padding: 0 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .copy-btn:hover { background: rgba(200,255,87,0.2); }
+  .copy-btn:active { transform: scale(0.97); }
+
+  .copy-btn svg { width: 13px; height: 13px; }
+
+  .confirm {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--success);
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.25s;
+    letter-spacing: 0.04em;
+  }
+
+  .error-msg {
+    background: var(--danger-dim);
+    border: 1px solid rgba(255,95,95,0.2);
+    border-radius: var(--radius-sm);
+    color: var(--danger);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    display: none;
+    line-height: 1.5;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 1.25rem 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  footer {
+    margin-top: 2rem;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  footer a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 480px) {
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <header>
+    <div class="badge">zero api · zero tokens · pure js</div>
+    <h1>jsDelivr <span>URL</span><br>Converter</h1>
+    <p class="subtitle">github.com → cdn.jsdelivr.net/gh/</p>
+  </header>
+
+  <!-- Mode 1: Paste URL -->
+  <div class="section">
+    <div class="section-label">Paste a GitHub URL</div>
+
+    <label>Full GitHub file URL (must include /blob/)</label>
+    <input
+      id="paste-input"
+      type="text"
+      placeholder="https://github.com/ggyummi/tiny-deluxe/blob/main/collections/discover/cover/trending.webp"
+      oninput="convertPaste()"
+      autocomplete="off"
+      spellcheck="false"
+    >
+
+    <div id="paste-error" class="error-msg"></div>
+
+    <div id="paste-result" style="display:none">
+      <div class="output-row">
+        <div class="output-box" id="paste-output"></div>
+        <button class="copy-btn" onclick="copyText('paste-output','paste-confirm')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+          COPY
+        </button>
+      </div>
+      <div class="confirm" id="paste-confirm">✓ Copied to clipboard</div>
+    </div>
+  </div>
+
+  <div class="divider">or build manually</div>
+
+  <!-- Mode 2: Manual builder -->
+  <div class="section">
+    <div class="section-label">Manual builder</div>
+
+    <div class="grid-2">
+      <div>
+        <label>User / Org</label>
+        <input id="m-user" type="text" placeholder="ggyummi" oninput="buildManual()" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label>Repository</label>
+        <input id="m-repo" type="text" placeholder="tiny-deluxe" oninput="buildManual()" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label>Branch</label>
+        <input id="m-branch" type="text" placeholder="main" oninput="buildManual()" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label>File path</label>
+        <input id="m-path" type="text" placeholder="collections/discover/cover/trending.webp" oninput="buildManual()" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div id="manual-result" style="display:none">
+      <div class="output-row">
+        <div class="output-box" id="manual-output"></div>
+        <button class="copy-btn" onclick="copyText('manual-output','manual-confirm')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2v1"/>
+          </svg>
+          COPY
+        </button>
+      </div>
+      <div class="confirm" id="manual-confirm">✓ Copied to clipboard</div>
+    </div>
+  </div>
+
+  <footer>
+    No data sent anywhere &middot; runs entirely in your browser &middot;
+    <a href="https://github.com/ggyummi/tiny-deluxe" target="_blank" rel="noopener">tiny-deluxe</a>
+  </footer>
+</div>
+
+<script>
+  function convertPaste() {
+    const raw = document.getElementById('paste-input').value.trim();
+    const resultEl = document.getElementById('paste-result');
+    const errorEl = document.getElementById('paste-error');
+    const outputEl = document.getElementById('paste-output');
+
+    resultEl.style.display = 'none';
+    errorEl.style.display = 'none';
+    if (!raw) return;
+
+    const m = raw.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
+    if (!m) {
+      errorEl.textContent = 'Needs a full GitHub file URL with /blob/ — e.g. github.com/user/repo/blob/main/path/file.webp';
+      errorEl.style.display = 'block';
+      return;
+    }
+    const [, user, repo, branch, path] = m;
+    outputEl.textContent = `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${path}`;
+    resultEl.style.display = 'block';
+  }
+
+  function buildManual() {
+    const user   = document.getElementById('m-user').value.trim();
+    const repo   = document.getElementById('m-repo').value.trim();
+    const branch = document.getElementById('m-branch').value.trim() || 'main';
+    const path   = document.getElementById('m-path').value.trim().replace(/^\/+/, '');
+    const block  = document.getElementById('manual-result');
+    const out    = document.getElementById('manual-output');
+
+    if (!user || !repo || !path) { block.style.display = 'none'; return; }
+    out.textContent = `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${path}`;
+    block.style.display = 'block';
+  }
+
+  function copyText(outputId, confirmId) {
+    const text = document.getElementById(outputId).textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const el = document.getElementById(confirmId);
+      el.style.opacity = '1';
+      setTimeout(() => el.style.opacity = '0', 2200);
+    });
+  }
+</script>
+</body>
+</html>

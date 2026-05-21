@@ -27,6 +27,7 @@ import io
 import itertools
 import math
 import os
+import re
 import random
 import sys
 import json
@@ -66,6 +67,8 @@ COLLECTIONS_DIR = Path("collections")
 SOURCE_JSON     = Path("nuvio-collections.json")
 
 CANVAS_W, CANVAS_H = 1920, 1080
+PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
+FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
 
 # Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
 # even a modest pool gives a full grid; 40 gives good visual variety.
@@ -1422,7 +1425,25 @@ def render_t2_backdrop(
     return _t1_apply_gradient(dof, accent)
 
 
-# ─── Hero Banner (focused / cover) ──────────────────────────────────────────────────────────────────────────────────
+# ─── Emoji Stripping ──────────────────────────────────────────────────────────────────────────
+
+def strip_emoji(text: str) -> str:
+    """Remove emoji characters from text, collapsing surrounding whitespace."""
+    emoji_re = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE,
+    )
+    return emoji_re.sub("", text).strip()
+
+
+# ─── Cover / Focused Cards (Apple TV+ style frosted-glass panel) ──────────────────────────────
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -1476,103 +1497,62 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
     return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
 
 
-def _make_left_gradient(w: int, h: int, solid_pct: float = 0.25) -> Image.Image:
-    """Solid black to cubic ease-out to transparent over the left 65% of width."""
-    grad      = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    pixels    = grad.load()
-    solid_end = int(w * solid_pct)
-    fade_end  = int(w * 0.65)
-    for x in range(fade_end):
-        if x <= solid_end:
-            alpha = 255
-        else:
-            t     = (x - solid_end) / (fade_end - solid_end)
-            alpha = int(255 * (1.0 - t) ** 2.2)
-        for y in range(h):
-            pixels[x, y] = (0, 0, 0, alpha)
-    return grad
-
-
-def _render_glow_text(
-    canvas: Image.Image,
-    text: str,
-    font,
-    pos: tuple[int, int],
-    text_rgb: tuple[int, int, int] = (255, 255, 255),
-    glow_rgb: tuple[int, int, int] = (255, 255, 255),
-    glow_radius: int = 22,
-    layer_opacity: float = 0.88,
-) -> Image.Image:
-    """Composite text with dual-pass Gaussian glow onto canvas."""
-    size        = canvas.size
-    glow_base   = Image.new("RGBA", size, (0, 0, 0, 0))
-    ImageDraw.Draw(glow_base).text(pos, text, font=font, fill=(*glow_rgb, 230))
-    glow_wide   = glow_base.filter(ImageFilter.GaussianBlur(radius=glow_radius))
-    glow_narrow = glow_base.filter(ImageFilter.GaussianBlur(radius=glow_radius // 2))
-    glow_layer  = Image.alpha_composite(glow_wide, glow_narrow)
-    text_layer  = Image.new("RGBA", size, (0, 0, 0, 0))
-    ImageDraw.Draw(text_layer).text(pos, text, font=font, fill=(*text_rgb, 255))
-    overlay = Image.alpha_composite(glow_layer, text_layer)
-    base    = canvas.convert("RGBA")
-    result  = Image.alpha_composite(base, overlay)
-    if layer_opacity < 1.0:
-        result = Image.blend(base, result, layer_opacity)
-    return result
-
-
-def _render_plain_text(
-    canvas: Image.Image,
-    text: str,
-    font,
-    pos: tuple[int, int],
-    text_rgb: tuple[int, int, int] = (255, 255, 255),
-    layer_opacity: float = 0.88,
-) -> Image.Image:
-    """Composite plain text (no glow) onto canvas at layer_opacity."""
-    text_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(text_layer).text(pos, text, font=font, fill=(*text_rgb, 255))
-    base   = canvas.convert("RGBA")
-    result = Image.alpha_composite(base, text_layer)
-    if layer_opacity < 1.0:
-        result = Image.blend(base, result, layer_opacity)
-    return result
-
-
-def render_hero_banner(
-    backdrop: Image.Image,
-    label: str,
-    with_glow: bool,
-) -> Image.Image:
+def _render_frosted_glass_panel(img: Image.Image, label: str) -> Image.Image:
     """
-    Compose a 1920×1080 hero banner from a single TEXTLESS backdrop image:
-      • Cover  (with_glow=False) → plain text, slightly reduced opacity
-      • Focused (with_glow=True) → full-opacity text with outer glow
-    `label` is already uppercase (e.g. "TRENDING").
+    Composite a frosted-glass panel over the bottom 28% of `img`.
+    Blurs that region, darkens it with a semi-transparent overlay (alpha 150),
+    then centres the catalog title text within the panel.
+    Returns a new RGBA image at the same dimensions as `img`.
     """
-    bg = _crop_to_ratio(backdrop.convert("RGBA"), CANVAS_W, CANVAS_H).resize(
-        (CANVAS_W, CANVAS_H), Image.LANCZOS
-    )
-    bg = Image.alpha_composite(bg, _make_left_gradient(CANVAS_W, CANVAS_H, solid_pct=0.25))
+    w, h      = img.size
+    panel_top = int(h * 0.72)
+    panel_h   = h - panel_top
+
+    region  = img.crop((0, panel_top, w, h)).convert("RGBA")
+    blurred = region.filter(ImageFilter.GaussianBlur(radius=max(8, w // 100)))
+    overlay = Image.new("RGBA", (w, panel_h), (0, 0, 0, 150))
+    panel   = Image.alpha_composite(blurred, overlay)
 
     font_path = _find_font_path()
+    max_tw    = int(w * 0.90)
+    max_th    = int(panel_h * 0.65)
+    font      = _fit_font(label, max_tw, max_th, font_path)
+    tw, th    = _text_bbox(label, font)
+    tx        = (w - tw) // 2
+    ty        = (panel_h - th) // 2
+    ImageDraw.Draw(panel).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
 
-    # Larger text area than before — meatier, more cinematic hero label
-    max_tw = int(CANVAS_W * 0.50) - 80
-    max_th = int(CANVAS_H * 0.65)
-    font   = _fit_font(label, max_tw, max_th, font_path)
+    result = img.convert("RGBA").copy()
+    result.paste(panel, (0, panel_top))
+    return result
 
-    _, th = _text_bbox(label, font)
-    x = 60
-    y = (CANVAS_H - th) // 2
 
-    if with_glow:
-        # Focused — full opacity + outer glow
-        result = _render_glow_text(bg, label, font, (x, y), layer_opacity=1.0)
+def render_cover_card(
+    backdrop: Image.Image,
+    label: str,
+    orientation: str,
+    focused: bool,
+) -> Image.Image:
+    """
+    Render a cover card in Apple TV+ style.
+    orientation: 'landscape' (1920×1080) or 'portrait' (680×1000).
+    focused=True  → backdrop dimmed to FOCUSED_DIM strength, then frosted glass panel.
+    focused=False → full-brightness backdrop with frosted glass panel only.
+    Returns an RGB image.
+    """
+    if orientation == "portrait":
+        out_w, out_h = PORTRAIT_W, PORTRAIT_H
     else:
-        # Cover — slightly reduced opacity, no glow
-        result = _render_plain_text(bg, label, font, (x, y), layer_opacity=0.70)
+        out_w, out_h = CANVAS_W, CANVAS_H
 
-    return result.convert("RGB")
+    bg = _crop_to_ratio(backdrop.convert("RGBA"), out_w, out_h).resize(
+        (out_w, out_h), Image.LANCZOS
+    )
+    if focused:
+        black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
+        bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
+
+    return _render_frosted_glass_panel(bg, label).convert("RGB")
 
 # ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 
@@ -1598,8 +1578,9 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
 
     if mode in ("all", "covers"):
         for t in ("focused", "cover"):
-            for ext in (".jpg", ".webp"):
-                checks.append(base / t / f"{slug}{ext}")
+            for orient in ("landscape", "portrait"):
+                for ext in (".jpg", ".webp"):
+                    checks.append(base / t / f"{slug}_{orient}{ext}")
 
     return all(p.exists() for p in checks)
 
@@ -1662,30 +1643,24 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         # ALWAYS fetch a fresh textless backdrop (the most recently added /
         # most popular item) — never re-use the tiled prism image.
         if top_backdrop is None:
-            log.info("  Fetching textless backdrop for hero base …")
+            log.info("  Fetching backdrop for cover cards …")
             _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
 
         if top_backdrop is None:
-            log.warning("  No image available for hero banner — skipping covers.")
+            log.warning("  No image available for cover cards — skipping covers.")
             return
 
-        # First word of the catalog title in all caps:
-        #   "Trending"  → "TRENDING"
-        #   "Top Rated" → "TOP"
-        title       = (catalog.get("title") or slug).strip()
-        first_word  = title.split()[0] if title.split() else slug
-        label       = first_word.upper()
-        log.info("  Hero label: %s", label)
+        title = strip_emoji(catalog.get("title") or slug).strip()
+        label = title or slug
+        log.info("  Cover label: %s", label)
 
-        log.info("  Rendering focused banner …")
-        focused = render_hero_banner(top_backdrop, label, with_glow=True)
-        save_dual(focused, base / "focused" / slug)
-        log.info("    ✓ focused/%s.jpg + .webp", slug)
-
-        log.info("  Rendering cover banner …")
-        cover = render_hero_banner(top_backdrop, label, with_glow=False)
-        save_dual(cover, base / "cover" / slug)
-        log.info("    ✓ cover/%s.jpg + .webp", slug)
+        for orientation in ("landscape", "portrait"):
+            for focused_flag in (True, False):
+                variant = "focused" if focused_flag else "cover"
+                log.info("  Rendering %s %s …", variant, orientation)
+                card = render_cover_card(top_backdrop, label, orientation, focused=focused_flag)
+                save_dual(card, base / variant / f"{slug}_{orientation}")
+                log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)
 
     log.info("  title/ initialized (manual assets preserved).")
 

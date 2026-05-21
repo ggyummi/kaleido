@@ -23,11 +23,15 @@ collections/
     │   ├── {catalog}_t2_flat.jpg   ← T2 mixed P+L columns, tilt-only, no perspective warp
     │   └── {catalog}_t2_flat.webp
     ├── focused/
-    │   ├── {catalog}.jpg          ← hero banner + glow text — selected/hover state
-    │   └── {catalog}.webp
+    │   ├── {catalog}_landscape.jpg   ← frosted glass panel, dimmed — selected/hover (1920×1080)
+    │   ├── {catalog}_landscape.webp
+    │   ├── {catalog}_portrait.jpg    ← same, portrait orientation (680×1000)
+    │   └── {catalog}_portrait.webp
     ├── cover/
-    │   ├── {catalog}.jpg          ← hero banner, no glow — idle/unfocused state
-    │   └── {catalog}.webp
+    │   ├── {catalog}_landscape.jpg   ← frosted glass panel, full brightness — idle (1920×1080)
+    │   ├── {catalog}_landscape.webp
+    │   ├── {catalog}_portrait.jpg    ← same, portrait orientation (680×1000)
+    │   └── {catalog}_portrait.webp
     └── title/                     ← manual-only; automation never writes here
 ```
 
@@ -80,13 +84,17 @@ Ported from `backdrop_T2.py`:
 
 Ported from `backdrop_T2_flat.py` — identical to the T2 tilt variant but with perspective warp disabled (`POV_X=0, POV_Y=0, WARP_STRENGTH=0`) and focal centre shifted to `(0.50, 0.0)`.
 
-### Focused / Cover — hero banner
+### Focused / Cover — Apple TV+ style cover cards
 
-- Top backdrop image from the catalog, cropped and scaled to fill 1920×1080
-- Left-side gradient (solid black → transparent at ~25% width)
-- Catalog name in **ALL CAPS** bold text, fitted to the left third, vertically centred
-- `focused`: text rendered with a dual-pass Gaussian outer glow
-- `cover`: plain text, no glow
+Each catalog generates four cover variants: landscape (1920×1080) and portrait (680×1000), each in both focused and cover states.
+
+- Top backdrop image from the catalog, cropped and scaled to the output dimensions
+- **Frosted glass panel** occupying the bottom 28% of the image:
+  - Gaussian-blurred backdrop region beneath the panel
+  - Dark semi-transparent overlay (alpha 150) over the blur
+  - Full catalog title (emoji stripped, original casing) centred horizontally and vertically within the panel
+- `focused`: backdrop dimmed to 50% brightness before the panel is applied — the darkened state shown when a card is selected or hovered
+- `cover`: full-brightness backdrop with the frosted glass panel — the idle/unfocused state
 
 ---
 
@@ -106,11 +114,17 @@ The URL never changes. When the pipeline regenerates a file and pushes it, jsDel
 # backdrop collage
 https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/backdrop/netflix.webp
 
-# focused banner (selected state)
-https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/focused/netflix.webp
+# focused banner — landscape (selected state, 1920×1080)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/focused/netflix_landscape.webp
 
-# cover banner (idle state)
-https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/cover/netflix.webp
+# focused banner — portrait (selected state, 680×1000)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/focused/netflix_portrait.webp
+
+# cover banner — landscape (idle state, 1920×1080)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/cover/netflix_landscape.webp
+
+# cover banner — portrait (idle state, 680×1000)
+https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/streaming/cover/netflix_portrait.webp
 ```
 
 The `{folder}` and `{catalog}` path segments come directly from the catalog's `id` field in `nuvio-collections.json` — `collections.{folder}.{catalog}`.
@@ -146,7 +160,7 @@ The file already exists in the repo root. Each entry follows this schema:
 - `{catalog}` becomes the filename (e.g. `netflix`, `action`, `trending`)
 - `catalogSources` lists one or more Stremio addon catalog endpoints to pull artwork from; movies and series are mixed into one backdrop pool
 
-The included `nuvio-collections.json` has 15 ready-to-use entries across `discover/`, `streaming/`, `genres/`, and `anime/`.
+The included `nuvio-collections.json` has entries across `discover/`, `streaming/`, `genres/`, `themes/`, `studios/`, `decades/`, `runtime/`, and `simkl/`.
 
 ### 3. Add GitHub Secrets
 
@@ -179,15 +193,31 @@ Leave **Force Regenerate** unchecked for faster incremental runs — already-gen
 
 ## Workflow steps
 
-The `generate-assets.yml` workflow runs the following steps:
+Two separate workflows are provided, each triggerable from **Actions → Run workflow**:
+
+### `generate-backdrops.yml` — 🖼 Nuvio · Backdrop Generator
+
+Runs automatically every Monday and on pushes to `main` that touch key files.
+
+1. **Checkout** — full history clone
+2. **Python 3.11** — set up with pip cache
+3. **Dependencies** — `pip install -r requirements.txt` (requests, Pillow, numpy)
+4. **Validate** — confirms `nuvio-collections.json` exists and has valid `collections.*` entries
+5. **Generate** — runs `generate_catalog_assets.py --target <input> --mode backdrop [--force]`
+6. **Commit & push** — stages only `backdrop/` assets; commits with a summary line
+7. **Purge CDN** — runs `collections/scripts/purge.py` to flush jsDelivr cache immediately
+
+### `generate-covers.yml` — 🎨 Nuvio · Cover Generator
+
+Manual dispatch only.
 
 1. **Checkout** — full history clone
 2. **Python 3.11** — set up with pip cache
 3. **Font install** — NimbusSans Bold (Helvetica Neue equivalent) + Liberation Sans fallback
 4. **Dependencies** — `pip install -r requirements.txt` (requests, Pillow, numpy)
 5. **Validate** — confirms `nuvio-collections.json` exists and has valid `collections.*` entries
-6. **Generate** — runs `generate_catalog_assets.py --target <input> [--force]`
-7. **Commit & push** — stages only `backdrop/`, `focused/`, `cover/` assets and `title/.gitkeep` placeholders; commits with a summary line
+6. **Generate** — runs `generate_catalog_assets.py --target <input> --mode covers [--force]`
+7. **Commit & push** — stages `focused/` and `cover/` assets; commits with a summary line
 8. **Purge CDN** — runs `collections/scripts/purge.py` to flush jsDelivr cache immediately
 
 ---
@@ -244,7 +274,8 @@ REPO_SLUG=yourname/yourrepo python collections/scripts/purge.py
 tiny-deluxe/
 ├── .github/
 │   └── workflows/
-│       └── generate-assets.yml     ← GitHub Actions workflow
+│       ├── generate-backdrops.yml  ← backdrop generation workflow (auto + manual)
+│       └── generate-covers.yml     ← cover/focused generation workflow (manual)
 ├── collections/
 │   ├── scripts/
 │   │   └── purge.py                ← jsDelivr CDN cache purge script
@@ -255,7 +286,11 @@ tiny-deluxe/
 │   │   └── title/
 │   ├── streaming/
 │   ├── genres/
-│   └── anime/
+│   ├── themes/
+│   ├── studios/
+│   ├── decades/
+│   ├── runtime/
+│   └── simkl/
 ├── generate_catalog_assets.py      ← main asset generator
 ├── nuvio-collections.json          ← catalog config (edit to add/remove catalogs)
 ├── requirements.txt

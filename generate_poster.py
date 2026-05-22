@@ -85,4 +85,25 @@ def create_custom_poster():
     font_file = download_font()
     
     # Use the downloaded TrueType font
-    font = ImageFont.truetype(font_file, 4
+    font = ImageFont.truetype(font_file, 40)
+
+    draw = ImageDraw.Draw(img)
+    text = f"{GENRE_TEXT}   •   {RATING_TEXT}"
+    
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+    
+    x = (width - text_width) / 2
+    y = height - (blur_height / 1.8) - (text_height / 2) 
+    
+    draw.text((x+3, y+3), text, font=font, fill=(0, 0, 0, 200)) # Drop shadow
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255)) # Main text
+
+    # 10. Save the final image
+    final_img = img.convert("RGB")
+    final_img.save(OUTPUT_FILE, quality=95)
+    print(f"Success! Saved custom poster to {OUTPUT_FILE} at {TARGET_WIDTH}x{new_height}")
+
+if __name__ == "__main__":
+    create_custom_poster()

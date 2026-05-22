@@ -1743,8 +1743,8 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
-        # ALWAYS fetch a fresh textless backdrop (the most recently added /
-        # most popular item) — never re-use the tiled prism image.
+        # Use the top backdrop (most popular/recent item) for all 4 cover variants.
+        # Each catalog fetches from its own source so catalogs naturally get different images.
         if top_backdrop is None:
             log.info("  Fetching backdrop for cover cards …")
             _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
@@ -1754,7 +1754,9 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
             return
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
-        accent = default_accent_for_label(slug)
+        _h     = random.random()
+        _r, _g, _b = colorsys.hsv_to_rgb(_h, 0.65, 0.88)
+        accent = (int(_r * 255), int(_g * 255), int(_b * 255))
         log.info("  Cover label: %s  accent: rgb%s", label, accent)
 
         for orientation in ("landscape", "portrait"):

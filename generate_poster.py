@@ -11,24 +11,22 @@ OUTPUT_FILE = "custom_poster_radial.jpg"
 TARGET_WIDTH = 800 # Downscales the image so effects are visible
 
 def download_font():
-    """Fetches a clean, static UI font using a direct raw link."""
-    font_path = "Roboto-Medium.ttf"
+    """Fetches a clean, static UI font using an unbreakable direct link."""
+    font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
         print("Downloading font...")
-        # Direct RAW link to standard static Roboto Medium
-        url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Medium.ttf"
+        # Pinned to a specific v3.8.0 release tag so it will NEVER 404
+        url = "https://raw.githubusercontent.com/matplotlib/matplotlib/v3.8.0/lib/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf"
         
-        # Add a timeout and a browser header just in case
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=10)
         
-        # Safety check: Make sure we got a real file back before saving
         if response.status_code == 200:
             with open(font_path, "wb") as f:
                 f.write(response.content)
             print("Font downloaded successfully.")
         else:
-            raise Exception(f"Font download failed with status code: {response.status_code}. The URL might be blocked or changed.")
+            raise Exception(f"Font download failed with status code: {response.status_code}")
             
     return font_path
 
@@ -83,8 +81,6 @@ def create_custom_poster():
 
     # 9. Load the downloaded Font & Draw Text
     font_file = download_font()
-    
-    # Use the downloaded TrueType font
     font = ImageFont.truetype(font_file, 40)
 
     draw = ImageDraw.Draw(img)

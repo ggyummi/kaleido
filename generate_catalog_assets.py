@@ -1448,16 +1448,16 @@ def strip_emoji(text: str) -> str:
     """Remove emoji characters from text, collapsing surrounding whitespace."""
     emoji_re = re.compile(
         "["
-        "\U0001F600-\U0001F64F"
-        "\U0001F300-\U0001F5FF"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF"
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
+        "\U0001F000-\U0001FFFF"  # All SMP emoji (flags, people, objects, 🪄 U+1FA84, etc.)
+        "\U00002600-\U000027BF"  # Misc symbols (☀ ★ ♥) + dingbats (✂ ✈)
+        "\U000024C2-\U00002BFF"  # Enclosed chars, arrows, misc technical
+        "\U0000FE00-\U0000FE0F"  # Variation selectors (emoji presentation)
         "]+",
         flags=re.UNICODE,
     )
-    return emoji_re.sub("", text).strip()
+    text = emoji_re.sub("", text)
+    text = text.replace("‍", "").replace("️", "")  # ZWJ + variation selector
+    return " ".join(text.split())
 
 
 # ─── Cover / Focused Cards (Apple TV+ style cinematic gradient + title) ─────────────────────

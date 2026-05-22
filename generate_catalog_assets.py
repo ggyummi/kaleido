@@ -1754,7 +1754,9 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
             return
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
-        accent = default_accent_for_label(slug)
+        _h     = random.random()
+        _r, _g, _b = colorsys.hsv_to_rgb(_h, 0.65, 0.88)
+        accent = (int(_r * 255), int(_g * 255), int(_b * 255))
         log.info("  Cover label: %s  accent: rgb%s", label, accent)
 
         for orientation in ("landscape", "portrait"):

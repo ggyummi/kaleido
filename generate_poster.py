@@ -42,7 +42,7 @@ def create_custom_poster():
     width = img.width
 
     # 1. Crank up the blur for a "frosted glass" color-bleed effect
-    blurred_img = img.filter(ImageFilter.GaussianBlur(radius=40))
+    blurred_img = img.filter(ImageFilter.GaussianBlur(radius=10))
 
     # 2. Smooth Vertical Mask (Bottom 25%)
     mask = Image.new('L', img.size, 0)

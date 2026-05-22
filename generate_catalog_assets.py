@@ -434,6 +434,12 @@ def get_catalog_sources(catalog: dict) -> list[dict]:
     for src in raw:
         if "catalogId" in src and "id" not in src:
             src = {**src, "id": src["catalogId"]}
+        # Translate direct PMDB Picks IDs to their AIOMetadata equivalents.
+        # nuvio-collections.json stores "pmdb-{token}" (direct addon format);
+        # AIOMetadata exposes the same catalog as "publicmetadb.pick.{token}".
+        cid = src.get("id", "")
+        if cid.startswith("pmdb-"):
+            src = {**src, "id": "publicmetadb.pick." + cid[len("pmdb-"):]}
         result.append(src)
     return result
 

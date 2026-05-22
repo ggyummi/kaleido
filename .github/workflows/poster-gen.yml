@@ -28,4 +28,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: custom-posters
-          path: custom_poster.jpg
+          path: custom_poster_radial.jpg

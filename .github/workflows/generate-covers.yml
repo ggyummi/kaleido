@@ -12,8 +12,8 @@
 #   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)       680×1000  — full brightness + gradient + title
 #
 # A smooth bottom gradient fades from transparent at ~55% image height to near-black
-# at the bottom edge. The catalog title (emoji stripped, original casing) sits centred
-# horizontally in the bottom 20% of the image.
+# at the bottom edge. The catalog title (emoji stripped, original casing) is rendered
+# bold, lower-left aligned, with word-wrap for multi-word labels.
 # "focused" cards dim the backdrop to 50% brightness before the gradient is applied.
 #
 # Secrets  (Settings → Secrets and variables → Actions)
@@ -66,16 +66,16 @@ jobs:
           cache: "pip"
 
       # ── 3. Font — required for label rendering ───────────────────────────────
-      # NimbusSans-Regular.otf is used for catalog title text;
-      # LiberationSans-Regular is the TTF fallback.
-      - name: "🖋 Install Helvetica-equivalent font (NimbusSans Regular)"
+      # Priority: Open Sans Bold → NimbusSans Regular → LiberationSans Regular
+      - name: "🖋 Install fonts (Open Sans Bold, NimbusSans, LiberationSans)"
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
+            fonts-open-sans \
             fonts-urw-base35 \
             fonts-liberation
           fc-cache -fv
-          fc-list | grep -i "nimbus\|liberation" | grep -i regular | head -10 || true
+          fc-list | grep -i "open.sans\|nimbus\|liberation" | head -10 || true
 
       # ── 4. Python dependencies ───────────────────────────────────────────────
       - name: "📦 Install Python dependencies"

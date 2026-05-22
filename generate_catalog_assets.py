@@ -1510,24 +1510,30 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
 
 def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Image.Image:
     """
-    Apply a full-image diagonal color-grade overlay tinted with accent_rgb.
-    Gradient runs top-left (most vivid, ~75% opacity) to bottom-right
-    (~45% opacity) so the photo reads through cinema-poster style.
+    Apply a full-image two-color diagonal gradient overlay.
+    Top-left uses accent_rgb; bottom-right uses a complementary hue (~150° offset).
+    Opacity is 45-60% so the photo reads through.
     """
     w, h = img.size
     ar, ag, ab = accent_rgb
 
-    xs = np.linspace(1.0, 0.0, w, dtype=np.float32)
-    ys = np.linspace(1.0, 0.0, h, dtype=np.float32)
+    # Complementary color: shift hue ~150 degrees
+    h_val, s_val, v_val = colorsys.rgb_to_hsv(ar / 255, ag / 255, ab / 255)
+    h2 = (h_val + 0.42) % 1.0
+    r2, g2, b2 = colorsys.hsv_to_rgb(h2, min(1.0, s_val * 1.1), min(1.0, v_val * 0.95))
+    br, bg, bb = int(r2 * 255), int(g2 * 255), int(b2 * 255)
+
+    # t=0 top-left (accent), t=1 bottom-right (complement)
+    xs = np.linspace(0.0, 1.0, w, dtype=np.float32)
+    ys = np.linspace(0.0, 1.0, h, dtype=np.float32)
     xg, yg = np.meshgrid(xs, ys)
-    mask  = (xg + yg) * 0.5                                       # [0.0, 1.0] diagonal
-    alpha = ((0.30 + mask * 0.25) * 255).clip(0, 255).astype(np.uint8)  # [0.30, 0.55]
+    t = ((xg + yg) * 0.5).astype(np.float32)
 
     overlay = np.zeros((h, w, 4), dtype=np.uint8)
-    overlay[:, :, 0] = ar
-    overlay[:, :, 1] = ag
-    overlay[:, :, 2] = ab
-    overlay[:, :, 3] = alpha
+    overlay[:, :, 0] = np.clip(ar * (1 - t) + br * t, 0, 255).astype(np.uint8)
+    overlay[:, :, 1] = np.clip(ag * (1 - t) + bg * t, 0, 255).astype(np.uint8)
+    overlay[:, :, 2] = np.clip(ab * (1 - t) + bb * t, 0, 255).astype(np.uint8)
+    overlay[:, :, 3] = np.clip((0.45 + t * 0.15) * 255, 0, 255).astype(np.uint8)
 
     return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
 

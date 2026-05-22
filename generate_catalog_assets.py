@@ -1510,7 +1510,7 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
 
 def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Image.Image:
     """
-    Apply a bold diagonal color-grade overlay tinted with accent_rgb.
+    Apply a full-image diagonal color-grade overlay tinted with accent_rgb.
     Gradient runs top-left (most vivid, ~75% opacity) to bottom-right
     (~45% opacity) so the photo reads through cinema-poster style.
     """
@@ -1555,7 +1555,7 @@ def _wrap_text(label: str, font, max_w: int) -> list[str]:
 def _fit_font_multiline(
     label: str, max_w: int, max_h: int, font_path: str | None
 ) -> tuple:
-    """Binary-search for largest font where all wrapped lines fit in max_w × max_h."""
+    """Binary-search for largest font where all wrapped lines fit in max_w x max_h."""
     lo, hi = 28, 300
     best_font  = _load_font(lo, font_path)
     best_lines = _wrap_text(label, best_font, max_w)
@@ -1581,8 +1581,8 @@ def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
     catalog title bold, lower-left, with word-wrap for multi-word labels.
 
     Gradient starts transparent at ~55% of image height, fades to near-black
-    (#0a0a0a) at the bottom edge. Text is left-anchored at 6% from the left
-    and sits just above 5% padding from the bottom.
+    (#0a0a0a) at the bottom edge. Text is left-anchored at 8% from the left
+    and sits just above 8% padding from the bottom.
     """
     w, h   = img.size
     result = img.convert("RGBA")
@@ -1611,8 +1611,8 @@ def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
     _, lh         = _text_bbox("Ag", font)
     line_step     = int(lh * 1.15)
     total_text_h  = line_step * len(lines)
-    bottom_pad    = int(h * 0.05)
-    tx            = int(w * 0.06)
+    bottom_pad    = int(h * 0.08)
+    tx            = int(w * 0.08)
     ty            = h - bottom_pad - total_text_h
     draw          = ImageDraw.Draw(result)
     for i, line in enumerate(lines):

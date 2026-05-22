@@ -11,19 +11,35 @@ OUTPUT_FILE = "custom_poster_radial.jpg"
 TARGET_WIDTH = 800 # Downscales the image so effects are visible
 
 def download_font():
-    """Fetches a clean UI font so GitHub Actions never drops to the 10px default."""
-    font_path = "Inter.ttf"
+    """Fetches a clean, static UI font using a direct raw link."""
+    font_path = "Roboto-Medium.ttf"
     if not os.path.exists(font_path):
         print("Downloading font...")
-        url = "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bslnt%2Cwght%5D.ttf"
-        response = requests.get(url)
-        with open(font_path, "wb") as f:
-            f.write(response.content)
+        # Direct RAW link to standard static Roboto Medium
+        url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Medium.ttf"
+        
+        # Add a timeout and a browser header just in case
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        # Safety check: Make sure we got a real file back before saving
+        if response.status_code == 200:
+            with open(font_path, "wb") as f:
+                f.write(response.content)
+            print("Font downloaded successfully.")
+        else:
+            raise Exception(f"Font download failed with status code: {response.status_code}. The URL might be blocked or changed.")
+            
     return font_path
 
 def create_custom_poster():
     # 1. Fetch the image from TMDB
-    response = requests.get(TMDB_POSTER_URL)
+    print("Fetching poster from TMDB...")
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    response = requests.get(TMDB_POSTER_URL, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"Failed to download image. TMDB returned: {response.status_code}")
+        
     img = Image.open(BytesIO(response.content)).convert("RGBA")
     
     # 2. Downscale the image to make effects visible
@@ -67,25 +83,6 @@ def create_custom_poster():
 
     # 9. Load the downloaded Font & Draw Text
     font_file = download_font()
-    font = ImageFont.truetype(font_file, 40) # 40px looks great on an 800px image
-
-    draw = ImageDraw.Draw(img)
-    text = f"{GENRE_TEXT}   •   {RATING_TEXT}"
     
-    text_bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = text_bbox[2] - text_bbox[0]
-    text_height = text_bbox[3] - text_bbox[1]
-    
-    x = (width - text_width) / 2
-    y = height - (blur_height / 1.8) - (text_height / 2) 
-    
-    draw.text((x+3, y+3), text, font=font, fill=(0, 0, 0, 200)) # Drop shadow
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255)) # Main text
-
-    # 10. Save the final image
-    final_img = img.convert("RGB")
-    final_img.save(OUTPUT_FILE, quality=95)
-    print(f"Saved custom poster to {OUTPUT_FILE}")
-
-if __name__ == "__main__":
-    create_custom_poster()
+    # Use the downloaded TrueType font
+    font = ImageFont.truetype(font_file, 4

@@ -96,6 +96,15 @@ FOCUS_Y     = 0.53 # vertical   focal point fraction (0=top,  1=bottom)
 # ─── Font Candidates ─────────────────────────────────────────────────────────────────────────────
 
 _FONT_CANDIDATES = [
+    # Inter Bold (preferred)
+    "/usr/share/fonts/truetype/inter/Inter-Bold.ttf",
+    "/usr/share/fonts/inter/Inter-Bold.ttf",
+    "/usr/local/share/fonts/Inter-Bold.ttf",
+    # Open Sans Bold
+    "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf",
+    "/usr/share/fonts/truetype/open-sans/OpenSans-SemiBold.ttf",
+    "/usr/share/fonts/open-sans/OpenSans-Bold.ttf",
+    # Helvetica-equivalent fallbacks
     "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
     "/usr/share/fonts/urw-base35/NimbusSans-Regular.otf",
     "/usr/share/fonts/type1/urw-base35/NimbusSans-Regular.otf",
@@ -1523,20 +1532,64 @@ def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Im
     return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
 
 
+def _wrap_text(label: str, font, max_w: int) -> list[str]:
+    """Greedy word-wrap: returns list of lines each fitting within max_w."""
+    words = label.split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current: list[str] = []
+    for word in words:
+        candidate = " ".join(current + [word])
+        tw, _ = _text_bbox(candidate, font)
+        if tw <= max_w or not current:
+            current.append(word)
+        else:
+            lines.append(" ".join(current))
+            current = [word]
+    if current:
+        lines.append(" ".join(current))
+    return lines
+
+
+def _fit_font_multiline(
+    label: str, max_w: int, max_h: int, font_path: str | None
+) -> tuple:
+    """Binary-search for largest font where all wrapped lines fit in max_w × max_h."""
+    lo, hi = 28, 300
+    best_font  = _load_font(lo, font_path)
+    best_lines = _wrap_text(label, best_font, max_w)
+    while lo <= hi:
+        mid  = (lo + hi) // 2
+        f    = _load_font(mid, font_path)
+        lines = _wrap_text(label, f, max_w)
+        _, lh = _text_bbox("Ag", f)
+        total_h = int(lh * 1.15 * len(lines))
+        max_lw  = max(_text_bbox(ln, f)[0] for ln in lines)
+        if max_lw <= max_w and total_h <= max_h:
+            best_font  = f
+            best_lines = lines
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best_font, best_lines
+
+
 def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
     """
-    Composite a smooth cinematic bottom-gradient vignette onto `img` then
-    render the catalog title centred in the bottom 20% of the image.
+    Composite a cinematic bottom-gradient vignette onto `img` then render the
+    catalog title bold, lower-left, with word-wrap for multi-word labels.
 
-    The gradient starts fully transparent at ~72% of image height and fades
-    to solid near-black (#0a0a0a) by the bottom edge — no hard panel boundary.
+    Gradient starts transparent at ~55% of image height, fades to near-black
+    (#0a0a0a) at the bottom edge. Text is left-anchored at 6% from the left
+    and sits just above 5% padding from the bottom.
     """
     w, h   = img.size
     result = img.convert("RGBA")
 
-    # Gradient: transparent at 72%, near-black (#0a0a0a) at 100%
+    # Gradient: transparent at 55%, near-black (#0a0a0a) at 100%
     grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
-    grad_start = int(h * 0.72)
+    grad_start = int(h * 0.55)
     if grad_start < h:
         ys    = np.arange(0, h - grad_start, dtype=np.float32)
         t     = ys / max(1.0, h - grad_start - 1)
@@ -1548,17 +1601,22 @@ def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
 
     result = Image.alpha_composite(result, Image.fromarray(grad_arr, "RGBA"))
 
-    # Title centred horizontally in the bottom 20%
-    text_zone_top = int(h * 0.80)
+    # Title: lower-left, bold, word-wrapped
+    text_zone_top = int(h * 0.62)
     text_zone_h   = h - text_zone_top
-    font_path = _find_font_path()
-    max_tw    = int(w * 0.90)
-    max_th    = int(text_zone_h * 0.60)
-    font      = _fit_font(label, max_tw, max_th, font_path)
-    tw, th    = _text_bbox(label, font)
-    tx        = (w - tw) // 2
-    ty        = text_zone_top + (text_zone_h - th) // 2
-    ImageDraw.Draw(result).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
+    font_path     = _find_font_path()
+    max_tw        = int(w * 0.55)
+    max_th        = int(text_zone_h * 0.60)
+    font, lines   = _fit_font_multiline(label, max_tw, max_th, font_path)
+    _, lh         = _text_bbox("Ag", font)
+    line_step     = int(lh * 1.15)
+    total_text_h  = line_step * len(lines)
+    bottom_pad    = int(h * 0.05)
+    tx            = int(w * 0.06)
+    ty            = h - bottom_pad - total_text_h
+    draw          = ImageDraw.Draw(result)
+    for i, line in enumerate(lines):
+        draw.text((tx, ty + i * line_step), line, font=font, fill=(255, 255, 255, 255))
 
     return result
 

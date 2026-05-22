@@ -7,11 +7,10 @@ from io import BytesIO
 TMDB_POSTER_URL = "https://image.tmdb.org/t/p/original/jRf89HVEtBZiSnOXXWDhZOfuTwW.jpg" 
 GENRE_TEXT = "Thriller"
 RATING_TEXT = "★ 7.2"
-OUTPUT_FILE = "custom_poster_final.jpg"
+OUTPUT_FILE = "custom_poster_seamless.jpg"
 TARGET_WIDTH = 800
 
 def download_font():
-    """Fetches a clean, static UI font using an unbreakable direct link."""
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
         print("Downloading font...")
@@ -29,42 +28,58 @@ def download_font():
     return font_path
 
 def create_custom_poster():
-    # 1. Fetch and scale the image
     print("Fetching poster from TMDB...")
     headers = {'User-Agent': 'Mozilla/5.0'}
     response = requests.get(TMDB_POSTER_URL, headers=headers)
     if response.status_code != 200:
         raise Exception(f"Failed to download image. TMDB returned: {response.status_code}")
         
+    # 1. Open and resize the base image
     img = Image.open(BytesIO(response.content)).convert("RGBA")
     ratio = TARGET_WIDTH / img.width
-    new_height = int(img.height * ratio)
-    img = img.resize((TARGET_WIDTH, new_height), Image.Resampling.LANCZOS)
-    width, height = img.size
+    height = int(img.height * ratio)
+    img = img.resize((TARGET_WIDTH, height), Image.Resampling.LANCZOS)
+    width = img.width
 
-    # 2. Define the bottom region (taller, bottom 30%)
-    blur_height = int(height * 0.30) 
-    bottom_box = (0, height - blur_height, width, height)
-    bottom_region = img.crop(bottom_box)
+    # 2. Create a fully blurred copy of the entire image
+    blurred_img = img.filter(ImageFilter.GaussianBlur(radius=20))
+
+    # 3. Create a Vertical Gradient Mask for a seamless blur transition
+    # 'L' mode creates an 8-bit grayscale image. 0 = Keep Sharp, 255 = Show Blur.
+    mask = Image.new('L', img.size, 0)
+    draw_mask = ImageDraw.Draw(mask)
     
-    # 3. Apply a heavy, straight uniform blur (No radial masks)
-    blurred_bottom = bottom_region.filter(ImageFilter.GaussianBlur(radius=30)) 
-    img.paste(blurred_bottom, bottom_box)
+    # Start the blur transition at the bottom 40% of the poster
+    blur_start_y = int(height * 0.60)
+    
+    for y in range(blur_start_y, height):
+        # Calculate progress from 0.0 to 1.0
+        progress = (y - blur_start_y) / (height - blur_start_y)
+        # Apply a curve so the blur starts softly and ramps up
+        alpha = int(255 * (progress ** 1.5)) 
+        draw_mask.line([(0, y), (width, y)], fill=alpha)
 
-    # 4. Add a strong dark gradient overlay
+    # 4. Seamlessly merge the sharp image and blurred image using the mask
+    img = Image.composite(blurred_img, img, mask)
+
+    # 5. Add the Dark Gradient Overlay (Black fading smoothly up)
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
+    draw_overlay = ImageDraw.Draw(overlay)
     
-    for y in range(height - blur_height, height):
-        # Steeper alpha curve (goes up to 240 out of 255) for a much darker bottom
-        alpha = int(240 * ((y - (height - blur_height)) / blur_height))
-        draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+    # Start the dark shadow lower down (bottom 25%) so it doesn't cover too much
+    dark_start_y = int(height * 0.75)
+    
+    for y in range(dark_start_y, height):
+        progress = (y - dark_start_y) / (height - dark_start_y)
+        # Curve the darkness so it blends beautifully into the background
+        alpha = int(230 * (progress ** 1.2))
+        draw_overlay.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
         
     img = Image.alpha_composite(img, overlay)
 
-    # 5. Load Font & Draw Text
+    # 6. Load Font & Draw Text
     font_file = download_font()
-    font = ImageFont.truetype(font_file, 45) # Slightly larger font
+    font = ImageFont.truetype(font_file, 45)
 
     draw = ImageDraw.Draw(img)
     text = f"{GENRE_TEXT}   •   {RATING_TEXT}"
@@ -73,18 +88,18 @@ def create_custom_poster():
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
     
-    # Position text perfectly in the center of the dark gradient
+    # Position text perfectly
     x = (width - text_width) / 2
-    y = height - (blur_height / 2) - (text_height / 2) + 20 
+    # Drop the text a bit lower to match your reference image
+    y = height - text_height - 60 
     
-    # Render Text
-    draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 255)) # Sharp drop shadow
+    draw.text((x+3, y+3), text, font=font, fill=(0, 0, 0, 220)) # Drop shadow
     draw.text((x, y), text, font=font, fill=(255, 255, 255, 255)) # Main white text
 
-    # 6. Save the final image
+    # 7. Save the final image
     final_img = img.convert("RGB")
     final_img.save(OUTPUT_FILE, quality=95)
-    print(f"Success! Saved custom poster to {OUTPUT_FILE}")
+    print(f"Success! Saved seamless custom poster to {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     create_custom_poster()

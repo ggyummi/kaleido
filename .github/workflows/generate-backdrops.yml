@@ -42,8 +42,7 @@ on:
     branches: [main]
     paths:
       - 'nuvio-collections.json'
-      - 'generate_catalog_assets.py'
-      - '.github/workflows/**'
+      - 'AIOMetadata.json'
 
 permissions:
   contents: write

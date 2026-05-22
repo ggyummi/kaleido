@@ -1,6 +1,6 @@
 {
   "version": "2.3.0",
-  "exportedAt": "2026-05-20T16:25:55.521Z",
+  "exportedAt": "2026-05-22T18:33:34.669Z",
   "config": {
     "language": "en-US",
     "includeAdult": true,
@@ -11,8 +11,8 @@
     "showRateMeButton": false,
     "anilistWatchTracking": true,
     "mdblistWatchTracking": true,
-    "posterRatingProvider": "rpdb",
-    "showDisabledCatalogs": false,
+    "posterRatingProvider": "custom",
+    "showDisabledCatalogs": true,
     "hideUnreleasedDigital": true,
     "hideUnreleasedDigitalSearch": false,
     "showMetaProviderAttribution": false,
@@ -114,6 +114,30 @@
     },
     "catalogs": [
       {
+        "id": "trakt.trending.movies",
+        "type": "movie",
+        "name": "🔥 Trending",
+        "enabled": true,
+        "showInHome": true,
+        "source": "trakt",
+        "metadata": {
+          "traktEndpoint": "trending/movies"
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "trakt.trending.shows",
+        "type": "series",
+        "name": "🔥 Trending",
+        "enabled": true,
+        "showInHome": true,
+        "source": "trakt",
+        "metadata": {
+          "traktEndpoint": "trending/shows"
+        },
+        "displayType": "series"
+      },
+      {
         "id": "trakt.recommendations.movies",
         "name": "🎯 Recommendations",
         "type": "movie",
@@ -158,8 +182,8 @@
         "type": "movie",
         "order": "asc",
         "source": "tmdb",
-        "enabled": true,
-        "showInHome": true
+        "enabled": false,
+        "showInHome": false
       },
       {
         "id": "tmdb.trending",
@@ -168,8 +192,8 @@
         "type": "series",
         "order": "asc",
         "source": "tmdb",
-        "enabled": true,
-        "showInHome": true
+        "enabled": false,
+        "showInHome": false
       },
       {
         "id": "tmdb.top_rated",
@@ -190,6 +214,42 @@
         "source": "tmdb",
         "enabled": true,
         "showInHome": true
+      },
+      {
+        "id": "simkl.watchlist.movies.plantowatch",
+        "type": "movie",
+        "name": "📼 Plan to Watch",
+        "enabled": true,
+        "showInHome": true,
+        "source": "simkl",
+        "metadata": {
+          "status": "plantowatch"
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "simkl.watchlist.shows.plantowatch",
+        "type": "series",
+        "name": "📼 Plan to Watch",
+        "enabled": true,
+        "showInHome": true,
+        "source": "simkl",
+        "metadata": {
+          "status": "plantowatch"
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "simkl.watchlist.anime.plantowatch",
+        "type": "anime",
+        "name": "📼 Plan to Watch",
+        "enabled": true,
+        "showInHome": true,
+        "source": "simkl",
+        "metadata": {
+          "status": "plantowatch"
+        },
+        "displayType": "anime"
       },
       {
         "id": "tmdb.airing_today",
@@ -302,32 +362,67 @@
         "showInHome": false
       },
       {
+        "id": "flixpatrol.netflix.ph.movie",
+        "type": "movie",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "movie"
+      },
+      {
         "id": "tmdb.discover.movie.streaming.netflix",
         "type": "movie",
         "name": "🎬 Netflix",
         "enabled": true,
         "showInHome": true,
         "source": "tmdb",
+        "cacheTTL": 86400,
         "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=8%7C1796%7C175&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=50",
           "discover": {
             "version": 2,
             "source": "tmdb",
             "mediaType": "movie",
             "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
               "watch_region": "US",
               "with_watch_providers": "8|1796|175",
-              "vote_count.gte": 50,
-              "with_release_type": "4|5|6"
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 50
             },
             "formState": {
               "catalogName": "🎬 Netflix",
               "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
               "catalogType": "movie",
-              "includeAdult": false,
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
               "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
               "watchRegion": "US",
               "watchProviders": [
                 {
@@ -344,10 +439,40 @@
                 }
               ],
               "providerJoinMode": "or",
-              "voteCountMin": 50
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 50,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
             }
           }
         }
+      },
+      {
+        "id": "flixpatrol.netflix.ph.series",
+        "type": "series",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "series"
       },
       {
         "id": "tmdb.discover.series.streaming.netflix",
@@ -356,26 +481,47 @@
         "enabled": true,
         "showInHome": true,
         "source": "tmdb",
+        "cacheTTL": 86400,
         "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=false&watch_region=US&with_watch_providers=8%7C1796%7C175&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=25",
           "discover": {
             "version": 2,
             "source": "tmdb",
             "mediaType": "tv",
             "params": {
-              "sort_by": "popularity.desc",
+              "sort_by": "first_air_date.desc",
               "include_adult": false,
               "watch_region": "US",
               "with_watch_providers": "8|1796|175",
-              "vote_count.gte": 25,
-              "with_status": "0|3|4|5"
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 25
             },
             "formState": {
               "catalogName": "🎬 Netflix",
               "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
               "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
               "includeAdult": false,
               "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
               "watchRegion": "US",
               "watchProviders": [
                 {
@@ -392,274 +538,40 @@
                 }
               ],
               "providerJoinMode": "or",
-              "voteCountMin": 25
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
             }
           }
         }
       },
       {
-        "id": "tmdb.discover.movie.streaming.disney-plus",
+        "id": "flixpatrol.hbo-max.ph.movie",
         "type": "movie",
-        "name": "🎬 Disney Plus",
+        "name": "🏆 Top 10",
         "enabled": true,
         "showInHome": true,
-        "source": "tmdb",
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
         "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "movie",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "337",
-              "vote_count.gte": 50,
-              "with_release_type": "4|5|6"
-            },
-            "formState": {
-              "catalogName": "🎬 Disney Plus",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "movie",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 337,
-                  "label": "Disney Plus"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 50
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.series.streaming.disney-plus",
-        "type": "series",
-        "name": "🎬 Disney Plus",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "tv",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "337",
-              "vote_count.gte": 25,
-              "with_status": "0|3|4|5"
-            },
-            "formState": {
-              "catalogName": "🎬 Disney Plus",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "series",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 337,
-                  "label": "Disney Plus"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 25
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.movie.streaming.prime-video",
-        "type": "movie",
-        "name": "🎬 Prime Video",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "movie",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "9|613|2100",
-              "vote_count.gte": 50,
-              "with_release_type": "4|5|6"
-            },
-            "formState": {
-              "catalogName": "🎬 Prime Video",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "movie",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 9,
-                  "label": "Amazon Prime Video"
-                },
-                {
-                  "id": 613,
-                  "label": "Amazon Prime Video Free with Ads"
-                },
-                {
-                  "id": 2100,
-                  "label": "Amazon Prime Video with Ads"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 50
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.series.streaming.prime-video",
-        "type": "series",
-        "name": "🎬 Prime Video",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "tv",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "9|613|2100",
-              "vote_count.gte": 25,
-              "with_status": "0|3|4|5"
-            },
-            "formState": {
-              "catalogName": "🎬 Prime Video",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "series",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 9,
-                  "label": "Amazon Prime Video"
-                },
-                {
-                  "id": 613,
-                  "label": "Amazon Prime Video Free with Ads"
-                },
-                {
-                  "id": 2100,
-                  "label": "Amazon Prime Video with Ads"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 25
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.movie.streaming.apple-tv",
-        "type": "movie",
-        "name": "🎬 Apple TV",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "movie",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "350|2243",
-              "vote_count.gte": 25,
-              "with_release_type": "4|5|6"
-            },
-            "formState": {
-              "catalogName": "🎬 Apple TV",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "movie",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 350,
-                  "label": "Apple TV"
-                },
-                {
-                  "id": 2243,
-                  "label": "Apple TV Amazon Channel"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 25
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.series.streaming.apple-tv",
-        "type": "series",
-        "name": "🎬 Apple TV",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "tv",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "350|2243",
-              "vote_count.gte": 10,
-              "with_status": "0|3|4|5"
-            },
-            "formState": {
-              "catalogName": "🎬 Apple TV",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "series",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 350,
-                  "label": "Apple TV"
-                },
-                {
-                  "id": 2243,
-                  "label": "Apple TV Amazon Channel"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 10
-            }
-          }
-        }
+          "countrySlug": "philippines"
+        },
+        "displayType": "movie"
       },
       {
         "id": "tmdb.discover.movie.streaming.hbo-max",
@@ -668,26 +580,48 @@
         "enabled": true,
         "showInHome": true,
         "source": "tmdb",
+        "cacheTTL": 86400,
         "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=1899%7C1825&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=50",
           "discover": {
             "version": 2,
             "source": "tmdb",
             "mediaType": "movie",
             "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
               "watch_region": "US",
               "with_watch_providers": "1899|1825",
-              "vote_count.gte": 50,
-              "with_release_type": "4|5|6"
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 50
             },
             "formState": {
               "catalogName": "🎬 HBO Max",
               "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
               "catalogType": "movie",
-              "includeAdult": false,
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
               "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
               "watchRegion": "US",
               "watchProviders": [
                 {
@@ -700,10 +634,40 @@
                 }
               ],
               "providerJoinMode": "or",
-              "voteCountMin": 50
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 50,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
             }
           }
         }
+      },
+      {
+        "id": "flixpatrol.hbo-max.ph.series",
+        "type": "series",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "series"
       },
       {
         "id": "tmdb.discover.series.streaming.hbo-max",
@@ -712,26 +676,47 @@
         "enabled": true,
         "showInHome": true,
         "source": "tmdb",
+        "cacheTTL": 86400,
         "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&watch_region=US&with_watch_providers=1899%7C1825&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=25",
           "discover": {
             "version": 2,
             "source": "tmdb",
             "mediaType": "tv",
             "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
               "watch_region": "US",
               "with_watch_providers": "1899|1825",
-              "vote_count.gte": 25,
-              "with_status": "0|3|4|5"
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 25
             },
             "formState": {
               "catalogName": "🎬 HBO Max",
               "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
               "catalogType": "series",
-              "includeAdult": false,
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
               "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
               "watchRegion": "US",
               "watchProviders": [
                 {
@@ -744,7 +729,775 @@
                 }
               ],
               "providerJoinMode": "or",
-              "voteCountMin": 25
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.disney.us.movie",
+        "type": "movie",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "united-states"
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.streaming.disney-plus",
+        "type": "movie",
+        "name": "🎬 Disney Plus",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=337&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=50",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "337",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 50
+            },
+            "formState": {
+              "catalogName": "🎬 Disney Plus",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 337,
+                  "label": "Disney Plus"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 50,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.disney.us.series",
+        "type": "series",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "united-states"
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.series.streaming.disney-plus",
+        "type": "series",
+        "name": "🎬 Disney Plus",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&watch_region=US&with_watch_providers=337&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=25",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "337",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 25
+            },
+            "formState": {
+              "catalogName": "🎬 Disney Plus",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 337,
+                  "label": "Disney Plus"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.amazon-prime.ph.movie",
+        "type": "movie",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.streaming.prime-video",
+        "type": "movie",
+        "name": "🎬 Prime Video",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=9%7C613%7C2100&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=50",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "9|613|2100",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 50
+            },
+            "formState": {
+              "catalogName": "🎬 Prime Video",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 9,
+                  "label": "Amazon Prime Video"
+                },
+                {
+                  "id": 613,
+                  "label": "Amazon Prime Video Free with Ads"
+                },
+                {
+                  "id": 2100,
+                  "label": "Amazon Prime Video with Ads"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 50,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.amazon-prime.ph.series",
+        "type": "series",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.series.streaming.prime-video",
+        "type": "series",
+        "name": "🎬 Prime Video",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&watch_region=US&with_watch_providers=9%7C613%7C2100&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=25",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "9|613|2100",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 25
+            },
+            "formState": {
+              "catalogName": "🎬 Prime Video",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 9,
+                  "label": "Amazon Prime Video"
+                },
+                {
+                  "id": 613,
+                  "label": "Amazon Prime Video Free with Ads"
+                },
+                {
+                  "id": 2100,
+                  "label": "Amazon Prime Video with Ads"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.apple-tv.ph.movie",
+        "type": "movie",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.streaming.apple-tv",
+        "type": "movie",
+        "name": "🎬 Apple TV",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=350%7C2243&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=25",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "350|2243",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 25
+            },
+            "formState": {
+              "catalogName": "🎬 Apple TV",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 350,
+                  "label": "Apple TV"
+                },
+                {
+                  "id": 2243,
+                  "label": "Apple TV Amazon Channel"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.apple-tv.ph.series",
+        "type": "series",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "philippines"
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.series.streaming.apple-tv",
+        "type": "series",
+        "name": "🎬 Apple TV",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&watch_region=US&with_watch_providers=350%7C2243&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=10",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "350|2243",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 10
+            },
+            "formState": {
+              "catalogName": "🎬 Apple TV",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 350,
+                  "label": "Apple TV"
+                },
+                {
+                  "id": 2243,
+                  "label": "Apple TV Amazon Channel"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 10,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "flixpatrol.crunchyroll.us.all",
+        "type": "all",
+        "name": "🏆 Top 10",
+        "enabled": true,
+        "showInHome": true,
+        "source": "flixpatrol",
+        "enableRatingPosters": true,
+        "metadata": {
+          "countrySlug": "united-states"
+        },
+        "displayType": "all"
+      },
+      {
+        "id": "tmdb.discover.movie.streaming.crunchyroll",
+        "type": "movie",
+        "name": "🎬 Crunchyroll",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&watch_region=US&with_watch_providers=283%7C1968&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_release_type=4%7C5%7C6&release_date.lte=2026-05-22&vote_count.gte=25",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "283|1968",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 25
+            },
+            "formState": {
+              "catalogName": "🎬 Crunchyroll",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 283,
+                  "label": "Crunchyroll"
+                },
+                {
+                  "id": 1968,
+                  "label": "Crunchyroll Amazon Channel"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 25,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        }
+      },
+      {
+        "id": "tmdb.discover.series.streaming.crunchyroll",
+        "type": "series",
+        "name": "🎬 Crunchyroll",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&watch_region=US&with_watch_providers=283%7C1968&with_watch_monetization_types=flatrate%7Cfree%7Cads%7Crent%7Cbuy&with_status=0%7C3%7C4%7C5&vote_count.gte=10",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "watch_region": "US",
+              "with_watch_providers": "283|1968",
+              "with_watch_monetization_types": "flatrate|free|ads|rent|buy",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 10
+            },
+            "formState": {
+              "catalogName": "🎬 Crunchyroll",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "US",
+              "watchProviders": [
+                {
+                  "id": 283,
+                  "label": "Crunchyroll"
+                },
+                {
+                  "id": 1968,
+                  "label": "Crunchyroll Amazon Channel"
+                }
+              ],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 10,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "clear",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
             }
           }
         }
@@ -1017,94 +1770,6 @@
                 {
                   "id": 387,
                   "label": "Peacock Premium Plus"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 10
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.movie.streaming.crunchyroll",
-        "type": "movie",
-        "name": "🎬 Crunchyroll",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "movie",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "283|1968",
-              "vote_count.gte": 25,
-              "with_release_type": "4|5|6"
-            },
-            "formState": {
-              "catalogName": "🎬 Crunchyroll",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "movie",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 283,
-                  "label": "Crunchyroll"
-                },
-                {
-                  "id": 1968,
-                  "label": "Crunchyroll Amazon Channel"
-                }
-              ],
-              "providerJoinMode": "or",
-              "voteCountMin": 25
-            }
-          }
-        }
-      },
-      {
-        "id": "tmdb.discover.series.streaming.crunchyroll",
-        "type": "series",
-        "name": "🎬 Crunchyroll",
-        "enabled": true,
-        "showInHome": true,
-        "source": "tmdb",
-        "metadata": {
-          "discover": {
-            "version": 2,
-            "source": "tmdb",
-            "mediaType": "tv",
-            "params": {
-              "sort_by": "popularity.desc",
-              "include_adult": false,
-              "watch_region": "US",
-              "with_watch_providers": "283|1968",
-              "vote_count.gte": 10,
-              "with_status": "0|3|4|5"
-            },
-            "formState": {
-              "catalogName": "🎬 Crunchyroll",
-              "discoverSource": "tmdb",
-              "sortBy": "popularity.desc",
-              "catalogType": "series",
-              "includeAdult": false,
-              "releasedOnly": true,
-              "watchRegion": "US",
-              "watchProviders": [
-                {
-                  "id": 283,
-                  "label": "Crunchyroll"
-                },
-                {
-                  "id": 1968,
-                  "label": "Crunchyroll Amazon Channel"
                 }
               ],
               "providerJoinMode": "or",
@@ -3051,6 +3716,694 @@
         "source": "mal",
         "enabled": true,
         "showInHome": true
+      },
+      {
+        "id": "tmdb.discover.movie.latest_bls.mpg37o8n",
+        "type": "movie",
+        "name": "🎨 Latest BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&with_keywords=365317%7C289844%7C240305&with_release_type=4%7C5%7C6&release_date.lte=2026-05-21&vote_count.gte=5",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "with_keywords": "365317|289844|240305",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 5
+            },
+            "formState": {
+              "catalogName": "🎨 Latest BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 5,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.latest_bls_copy.mpg38k9z",
+        "type": "series",
+        "name": "🎨 Latest BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&with_keywords=365317%7C289844%7C240305&with_status=0%7C3%7C4%7C5&vote_count.gte=5",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "with_keywords": "365317|289844|240305",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 5
+            },
+            "formState": {
+              "catalogName": "🎨 Latest BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 5,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "2026-05-21",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "custom",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.movie.latest_bls_copy.mpg3aljy",
+        "type": "movie",
+        "name": "🎨 Popular BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=popularity.desc&include_adult=true&with_keywords=365317%7C289844%7C240305&with_release_type=4%7C5%7C6&release_date.lte=2026-05-21&vote_count.gte=15",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "popularity.desc",
+              "include_adult": true,
+              "with_keywords": "365317|289844|240305",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 15
+            },
+            "formState": {
+              "catalogName": "🎨 Popular BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "popularity.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 15,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.popular_bls_copy.mpg3bqpv",
+        "type": "series",
+        "name": "🎨 Popular BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=popularity.desc&include_adult=true&with_keywords=365317%7C289844%7C240305&with_status=0%7C3%7C4%7C5&vote_count.gte=15",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "popularity.desc",
+              "include_adult": true,
+              "with_keywords": "365317|289844|240305",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 15
+            },
+            "formState": {
+              "catalogName": "🎨 Popular BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "popularity.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 15,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.series.popular_bls_copy.mpg3cy1z",
+        "type": "movie",
+        "name": "🎨 Latest Korean BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=primary_release_date.desc&include_adult=true&with_original_language=ko&with_keywords=365317%7C289844%7C240305&with_release_type=4%7C5%7C6&release_date.lte=2026-05-21&vote_count.gte=5",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "primary_release_date.desc",
+              "include_adult": true,
+              "with_original_language": "ko",
+              "with_keywords": "365317|289844|240305",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 5
+            },
+            "formState": {
+              "catalogName": "🎨 Latest Korean BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "primary_release_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "ko",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 5,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.lates_korean_bls_copy.mpg3fpqe",
+        "type": "series",
+        "name": "🎨 Latest Korean BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=first_air_date.desc&include_adult=true&with_original_language=ko&with_keywords=365317%7C289844%7C240305&with_status=0%7C3%7C4%7C5&vote_count.gte=5",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "first_air_date.desc",
+              "include_adult": true,
+              "with_original_language": "ko",
+              "with_keywords": "365317|289844|240305",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 5
+            },
+            "formState": {
+              "catalogName": "🎨 Latest Korean BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "first_air_date.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "ko",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 5,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "series"
+      },
+      {
+        "id": "tmdb.discover.movie.popular_bls_copy.mpg3gf3y",
+        "type": "movie",
+        "name": "🎨 Popular Korean BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (movie)",
+          "url": "https://www.themoviedb.org/discover/movie?sort_by=popularity.desc&include_adult=true&with_original_language=ko&with_keywords=365317%7C289844%7C240305&with_release_type=4%7C5%7C6&release_date.lte=2026-05-21&vote_count.gte=15",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "movie",
+            "params": {
+              "sort_by": "popularity.desc",
+              "include_adult": true,
+              "with_original_language": "ko",
+              "with_keywords": "365317|289844|240305",
+              "with_release_type": "4|5|6",
+              "release_date.lte": "__tmdb_date__:today:to",
+              "vote_count.gte": 15
+            },
+            "formState": {
+              "catalogName": "🎨 Popular Korean BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "popularity.desc",
+              "cacheTTL": 86400,
+              "catalogType": "movie",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "ko",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 15,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "movie"
+      },
+      {
+        "id": "tmdb.discover.movie.popular_korean_bls_copy.mpg3iv02",
+        "type": "series",
+        "name": "🎨 Popular Korean BLs",
+        "enabled": true,
+        "showInHome": true,
+        "source": "tmdb",
+        "cacheTTL": 86400,
+        "metadata": {
+          "description": "TMDB Discover (tv)",
+          "url": "https://www.themoviedb.org/discover/tv?sort_by=popularity.desc&include_adult=true&with_original_language=ko&with_keywords=365317%7C289844%7C240305&with_status=0%7C3%7C4%7C5&vote_count.gte=15",
+          "discover": {
+            "version": 2,
+            "source": "tmdb",
+            "mediaType": "tv",
+            "params": {
+              "sort_by": "popularity.desc",
+              "include_adult": true,
+              "with_original_language": "ko",
+              "with_keywords": "365317|289844|240305",
+              "with_status": "0|3|4|5",
+              "vote_count.gte": 15
+            },
+            "formState": {
+              "catalogName": "🎨 Popular Korean BLs",
+              "discoverSource": "tmdb",
+              "sortBy": "popularity.desc",
+              "cacheTTL": 86400,
+              "catalogType": "series",
+              "includeGenres": [],
+              "excludeGenres": [],
+              "genreJoinMode": "or",
+              "originalLanguage": "ko",
+              "originCountry": "",
+              "certificationCountry": "",
+              "certificationValue": "",
+              "certificationMode": "exact",
+              "includeAdult": true,
+              "releasedOnly": true,
+              "selectedPeople": [],
+              "peopleJoinMode": "or",
+              "withCompanies": [],
+              "withoutCompanies": [],
+              "companyJoinMode": "or",
+              "withKeywords": [
+                {
+                  "id": 365317,
+                  "label": "boy's love"
+                },
+                {
+                  "id": 289844,
+                  "label": "boys' love (bl)"
+                },
+                {
+                  "id": 240305,
+                  "label": "gay romance"
+                }
+              ],
+              "withoutKeywords": [],
+              "keywordJoinMode": "or",
+              "watchRegion": "",
+              "watchProviders": [],
+              "providerJoinMode": "or",
+              "voteAverageRange": [
+                0,
+                10
+              ],
+              "voteCountMin": 15,
+              "runtimeRange": [
+                0,
+                400
+              ],
+              "primaryReleaseFrom": "",
+              "primaryReleaseTo": "",
+              "movieDatePreset": "custom",
+              "firstAirFrom": "",
+              "firstAirTo": "",
+              "seriesDatePreset": "clear",
+              "airDateFrom": "",
+              "airDateTo": "",
+              "releaseRegion": ""
+            }
+          }
+        },
+        "displayType": "series"
       },
       {
         "id": "tmdb.discover.movie.theme.time-travel",
@@ -6195,51 +7548,136 @@
         }
       },
       {
-        "id": "simkl.watchlist.movies.plantowatch",
+        "id": "publicmetadb.pick.g92drmu1nb9sudu",
+        "type": "all",
+        "name": "🪄 Fresh out",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.zs2n4vj56suz8ar",
         "type": "movie",
-        "name": "📼 Plan to Watch",
+        "name": "🪄 Quick watch",
         "enabled": true,
         "showInHome": true,
-        "source": "simkl",
-        "metadata": {
-          "status": "plantowatch"
-        },
-        "displayType": "movie"
+        "source": "publicmetadb"
       },
       {
-        "id": "simkl.watchlist.shows.plantowatch",
+        "id": "publicmetadb.pick.idha6y0y17c9ews",
+        "type": "all",
+        "name": "🪄 Keep the streak going",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.r1uyprl5e0bgawc",
+        "type": "all",
+        "name": "🪄 From directors you love",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.8q1pwwpn4op21rr",
+        "type": "all",
+        "name": "🪄 Award winners you missed",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.ohd1xk4x5sjlq49",
+        "type": "all",
+        "name": "🪄 Late night picks",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.au484pa6qpqeoy6",
         "type": "series",
-        "name": "📼 Plan to Watch",
+        "name": "🪄 Binge-worthy",
         "enabled": true,
         "showInHome": true,
-        "source": "simkl",
-        "metadata": {
-          "status": "plantowatch"
-        },
-        "displayType": "series"
+        "source": "publicmetadb"
       },
       {
-        "id": "simkl.watchlist.anime.plantowatch",
-        "type": "anime",
-        "name": "📼 Plan to Watch",
+        "id": "publicmetadb.pick.9drrj7cqor5g1ex",
+        "type": "all",
+        "name": "🪄 Everyone's talking about",
         "enabled": true,
         "showInHome": true,
-        "source": "simkl",
-        "metadata": {
-          "status": "plantowatch"
-        },
-        "displayType": "anime"
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.ar0bdwacxpcer8x",
+        "type": "all",
+        "name": "🪄 Visually stunning",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.o2zmrzyjyyjz7xf",
+        "type": "all",
+        "name": "🪄 International cinema for you",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.ca6nlo1j0ltawig",
+        "type": "all",
+        "name": "🪄 Critics love, you will too",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.8mmuvla1516zrsl",
+        "type": "all",
+        "name": "🪄 Your next obsession",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.urmj2qii7wxxvzg",
+        "type": "series",
+        "name": "🪄 Series for you",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.26dczh69tqroplg",
+        "type": "movie",
+        "name": "🪄 Movies for you",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
+      },
+      {
+        "id": "publicmetadb.pick.b0dwj1e727rge9a",
+        "type": "all",
+        "name": "🪄 Anime for you",
+        "enabled": true,
+        "showInHome": true,
+        "source": "publicmetadb"
       }
     ],
     "publicmetadbWatchTracking": true,
     "hideUnreleasedShows": true,
-    "lastModified": 1779280549987,
-    "configVersion": 1779280549988,
-    "configHash": "c4d77de7c6b6b836"
+    "lastModified": 1779472640290,
+    "configVersion": 1779472640291,
+    "configHash": "212360474cb5bead",
+    "customPosterUrlPattern": "https://btttr.cc/poster-n/imdb/poster-default/{imdb_id}.jpg?tag=none"
   },
   "metadata": {
     "apiKeysExcluded": true,
-    "totalCatalogs": 163,
-    "enabledCatalogs": 152
+    "totalCatalogs": 199,
+    "enabledCatalogs": 186
   }
 }

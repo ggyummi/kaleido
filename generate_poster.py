@@ -11,10 +11,11 @@ OUTPUT_FILE = "custom_poster_seamless.jpg"
 TARGET_WIDTH = 800
 
 def download_font():
-    font_path = "DejaVuSans.ttf"
+    # Swapped to the BOLD variant to match the reference image
+    font_path = "DejaVuSans-Bold.ttf"
     if not os.path.exists(font_path):
-        print("Downloading font...")
-        url = "https://raw.githubusercontent.com/matplotlib/matplotlib/v3.8.0/lib/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf"
+        print("Downloading bold font...")
+        url = "https://raw.githubusercontent.com/matplotlib/matplotlib/v3.8.0/lib/matplotlib/mpl-data/fonts/ttf/DejaVuSans-Bold.ttf"
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=10)
         
@@ -34,52 +35,44 @@ def create_custom_poster():
     if response.status_code != 200:
         raise Exception(f"Failed to download image. TMDB returned: {response.status_code}")
         
-    # 1. Open and resize the base image
     img = Image.open(BytesIO(response.content)).convert("RGBA")
     ratio = TARGET_WIDTH / img.width
     height = int(img.height * ratio)
     img = img.resize((TARGET_WIDTH, height), Image.Resampling.LANCZOS)
     width = img.width
 
-    # 2. Create a fully blurred copy of the entire image
-    blurred_img = img.filter(ImageFilter.GaussianBlur(radius=20))
+    # 1. Crank up the blur for a "frosted glass" color-bleed effect
+    blurred_img = img.filter(ImageFilter.GaussianBlur(radius=40))
 
-    # 3. Create a Vertical Gradient Mask for a seamless blur transition
-    # 'L' mode creates an 8-bit grayscale image. 0 = Keep Sharp, 255 = Show Blur.
+    # 2. Smooth Vertical Mask (Bottom 25%)
     mask = Image.new('L', img.size, 0)
     draw_mask = ImageDraw.Draw(mask)
     
-    # Start the blur transition at the bottom 40% of the poster
-    blur_start_y = int(height * 0.60)
+    blur_zone_height = int(height * 0.25)
+    blur_start_y = height - blur_zone_height
     
     for y in range(blur_start_y, height):
-        # Calculate progress from 0.0 to 1.0
-        progress = (y - blur_start_y) / (height - blur_start_y)
-        # Apply a curve so the blur starts softly and ramps up
-        alpha = int(255 * (progress ** 1.5)) 
+        progress = (y - blur_start_y) / blur_zone_height
+        alpha = int(255 * (progress ** 1.2)) 
         draw_mask.line([(0, y), (width, y)], fill=alpha)
 
-    # 4. Seamlessly merge the sharp image and blurred image using the mask
     img = Image.composite(blurred_img, img, mask)
 
-    # 5. Add the Dark Gradient Overlay (Black fading smoothly up)
+    # 3. Very subtle gradient overlay (letting the red/orange shine through)
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw_overlay = ImageDraw.Draw(overlay)
     
-    # Start the dark shadow lower down (bottom 25%) so it doesn't cover too much
-    dark_start_y = int(height * 0.75)
-    
-    for y in range(dark_start_y, height):
-        progress = (y - dark_start_y) / (height - dark_start_y)
-        # Curve the darkness so it blends beautifully into the background
-        alpha = int(230 * (progress ** 1.2))
+    for y in range(blur_start_y, height):
+        progress = (y - blur_start_y) / blur_zone_height
+        # Max darkness is now only 110 (out of 255) instead of 230
+        alpha = int(110 * progress)
         draw_overlay.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
         
     img = Image.alpha_composite(img, overlay)
 
-    # 6. Load Font & Draw Text
+    # 4. Load Bold Font & Draw Text
     font_file = download_font()
-    font = ImageFont.truetype(font_file, 45)
+    font = ImageFont.truetype(font_file, 42)
 
     draw = ImageDraw.Draw(img)
     text = f"{GENRE_TEXT}   •   {RATING_TEXT}"
@@ -88,15 +81,15 @@ def create_custom_poster():
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
     
-    # Position text perfectly
+    # 5. Mathematically center the text perfectly inside the blurred zone
     x = (width - text_width) / 2
-    # Drop the text a bit lower to match your reference image
-    y = height - text_height - 60 
+    y = blur_start_y + (blur_zone_height / 2) - (text_height / 2)
     
-    draw.text((x+3, y+3), text, font=font, fill=(0, 0, 0, 220)) # Drop shadow
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255)) # Main white text
+    # Heavy drop shadow ensures text is readable even with a lighter background
+    draw.text((x+3, y+3), text, font=font, fill=(0, 0, 0, 200)) 
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255)) 
 
-    # 7. Save the final image
+    # 6. Save the final image
     final_img = img.convert("RGB")
     final_img.save(OUTPUT_FILE, quality=95)
     print(f"Success! Saved seamless custom poster to {OUTPUT_FILE}")

@@ -27,5 +27,5 @@ jobs:
       - name: Upload Generated Poster as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: custom-posters-final
-          path: custom_poster_final.jpg
+          name: custom-posters-seamless
+          path: custom_poster_seamless.jpg

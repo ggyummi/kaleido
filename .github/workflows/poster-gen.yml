@@ -27,5 +27,5 @@ jobs:
       - name: Upload Generated Poster as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: custom_poster_perfect
-          path: custom_poster_perfect.jpg
+          name: custom_poster_glass
+          path: custom_poster_glass.jpg

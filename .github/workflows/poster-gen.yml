@@ -27,5 +27,5 @@ jobs:
       - name: Upload Generated Poster as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: custom-posters
+          name: custom-posters-radial
           path: custom_poster_radial.jpg

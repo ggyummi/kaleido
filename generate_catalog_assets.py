@@ -1709,10 +1709,12 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         return
 
     top_backdrop: "Image.Image | None" = None
+    cover_backdrops: list[Image.Image] = []
 
     if do_backdrop:
         log.info("  Fetching backdrop artwork …")
         backdrops, logos, top_backdrop = fetch_all_backdrops(catalog)
+        cover_backdrops = backdrops
         if not backdrops:
             log.warning("  No backdrop images fetched — skipping render.")
             return
@@ -1743,30 +1745,37 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
-        # ALWAYS fetch a fresh textless backdrop (the most recently added /
-        # most popular item) — never re-use the tiled prism image.
-        if top_backdrop is None:
-            log.info("  Fetching backdrop for cover cards …")
-            _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+        # Fetch fresh backdrops for cover cards if not already available from backdrop pass.
+        # We need one per variant (4 total) so each output uses a distinct image.
+        if not cover_backdrops:
+            log.info("  Fetching backdrops for cover cards …")
+            cover_backdrops, _, _ = fetch_all_backdrops(catalog, limit=4)
 
-        if top_backdrop is None:
-            log.warning("  No image available for cover cards — skipping covers.")
+        if not cover_backdrops:
+            log.warning("  No images available for cover cards — skipping covers.")
             return
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
         accent = default_accent_for_label(slug)
-        log.info("  Cover label: %s  accent: rgb%s", label, accent)
+        log.info("  Cover label: %s  accent: rgb%s  backdrops available: %d",
+                 label, accent, len(cover_backdrops))
 
-        for orientation in ("landscape", "portrait"):
-            for focused_flag in (True, False):
-                variant = "focused" if focused_flag else "cover"
-                log.info("  Rendering %s %s …", variant, orientation)
-                card = render_cover_card(
-                    top_backdrop, label, orientation,
-                    focused=focused_flag, accent_rgb=accent,
-                )
-                save_dual(card, base / variant / f"{slug}_{orientation}")
-                log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)
+        _cover_variants = [
+            ("landscape", True),
+            ("landscape", False),
+            ("portrait",  True),
+            ("portrait",  False),
+        ]
+        for idx, (orientation, focused_flag) in enumerate(_cover_variants):
+            bd      = cover_backdrops[idx % len(cover_backdrops)]
+            variant = "focused" if focused_flag else "cover"
+            log.info("  Rendering %s %s (backdrop #%d) …", variant, orientation, idx)
+            card = render_cover_card(
+                bd, label, orientation,
+                focused=focused_flag, accent_rgb=accent,
+            )
+            save_dual(card, base / variant / f"{slug}_{orientation}")
+            log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)
 
     log.info("  title/ initialized (manual assets preserved).")
 

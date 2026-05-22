@@ -1012,10 +1012,10 @@
         ],
         "hideTitle": false,
         "tileShape": "LANDSCAPE",
-        "coverEmoji": "🪄",
+        "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1045,7 +1045,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1082,7 +1082,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1125,7 +1125,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1168,7 +1168,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1208,10 +1208,10 @@
         ],
         "hideTitle": false,
         "tileShape": "LANDSCAPE",
-        "coverEmoji": "🪄",
+        "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1254,7 +1254,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1297,7 +1297,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1340,7 +1340,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1376,7 +1376,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1413,7 +1413,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1456,7 +1456,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1499,7 +1499,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1542,7 +1542,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -1578,7 +1578,7 @@
         "coverEmoji": "",
         "focusGifUrl": "",
         "heroVideoUrl": "",
-        "titleLogoUrl": "",
+        "titleLogoUrl": "https://cdn.jsdelivr.net/gh/ggyummi/tiny-deluxe@main/collections/picks/title/for-you.png",
         "coverImageUrl": "",
         "catalogSources": [
           {
@@ -2567,7 +2567,7 @@
     "title": "🎨 Themes",
     "folders": [
       {
-        "id": "collections.theme.bls",
+        "id": "collections.themes.bls",
         "title": "BLs",
         "sources": [
           {
@@ -2627,7 +2627,7 @@
             "catalogId": "tmdb.discover.movie.popular_korean_bls_copy.mpg3iv02"
           }
         ],
-        "hideTitle": true,
+        "hideTitle": false,
         "tileShape": "LANDSCAPE",
         "coverEmoji": "",
         "focusGifUrl": "",
@@ -2684,7 +2684,7 @@
             "catalogId": "tmdb.discover.movie.popular_korean_bls_copy.mpg3iv02"
           }
         ],
-        "focusGifEnabled": true,
+        "focusGifEnabled": false,
         "heroBackdropUrl": ""
       },
       {
@@ -3250,7 +3250,6 @@
     "pinToTop": true,
     "viewMode": "FOLLOW_LAYOUT",
     "showAllTab": true,
-    "backdropImageUrl": "",
     "focusGlowEnabled": true
   },
   {

@@ -7,21 +7,26 @@ the pattern  collections.{folder}.{catalog},  fetches landscape backdrop
 artwork from Stremio addon endpoints (or TMDb as fallback), and writes four
 asset types per catalog into a FLAT directory structure:
 
-  collections/{folder}/backdrop/{catalog}.jpg(.webp)  — Prism 3D tilted-grid collage
-  collections/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + cinematic gradient + title (1920×1080)
-  collections/{folder}/focused/{catalog}_portrait.jpg(.webp)   — same, portrait (680×1000)
-  collections/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full brightness + gradient + title (1920×1080)
-  collections/{folder}/cover/{catalog}_portrait.jpg(.webp)     — same, portrait (680×1000)
-  collections/{folder}/title/                         — init only; never overwritten
+  collections/{folder}/backdrop/{catalog}.jpg(.webp)           — Prism 3D tilted-grid collage
+  collections/{folder}/backdrop/{catalog}_t1_tilt.jpg(.webp)   — T1 perspective warp
+  collections/{folder}/backdrop/{catalog}_t1_flat.jpg(.webp)   — T1 tilt only
+  collections/{folder}/backdrop/{catalog}_t2_tilt.jpg(.webp)   — T2 mixed columns, warp
+  collections/{folder}/backdrop/{catalog}_t2_flat.jpg(.webp)   — T2 mixed columns, flat
+  collections/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full-brightness card, 1920x1080
+  collections/{folder}/cover/{catalog}_portrait.jpg(.webp)     — full-brightness card, 680x1000
+  collections/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed card, 1920x1080
+  collections/{folder}/focused/{catalog}_portrait.jpg(.webp)   — dimmed card, 680x1000
+  collections/{folder}/title/                                   — init only; never overwritten
 
-Backdrop images are fetched from ALL catalogSources (movies + series mixed)
-and rendered using the Prism-style tilted-grid engine adapted from
-luckynumb3rs/stremio-perfect-setup (collections/scripts/backdrop.py).
-No OAuth tokens are required — uses public Stremio addon HTTP endpoints.
+Cover and focused cards feature:
+  * A color grade overlay derived from the image's own dominant color
+  * A bottom gradient that fades to a darkened version of that same color
+  * The full catalog title (emoji stripped) centred in the gradient area
 
 Optional environment variables:
   AIOMETADATA_URL   Base URL of AIOMetadata/Stremio addon (preferred)
   TMDB_API_KEY      TMDb API key (fallback for entries without catalogSources)
+  FANART_API_KEY    Fanart.tv API key (English title logo overlays on tiles)
 """
 
 import colorsys
@@ -42,7 +47,7 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ─── Logging ─────────────────────────────────────────────────────────────────────────────
+# --- Logging -----------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,15 +57,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("nuvio.catalog")
 
-# ─── Global Config ─────────────────────────────────────────────────────────────────────
+# --- Global Config -----------------------------------------------------------
 
 TMDB_API_KEY    = os.environ.get("TMDB_API_KEY", "")
 TMDB_BASE       = "https://api.themoviedb.org/3"
 TMDB_IMG_BASE   = "https://image.tmdb.org/t/p"
 
-# Optional: base URL of your AIOMetadata / Stremio addon instance.
-# When set the script calls {AIOMETADATA_URL}/catalog/{type}/{id}.json directly —
-# fully anonymous HTTP, no OAuth tokens required in the request.
 AIOMETADATA_URL = os.environ.get("AIOMETADATA_URL", "").rstrip("/")
 FANART_API_KEY  = os.environ.get("FANART_API_KEY", "")
 FANART_BASE     = "https://webservice.fanart.tv/v3"
@@ -68,32 +70,34 @@ FANART_BASE     = "https://webservice.fanart.tv/v3"
 COLLECTIONS_DIR = Path("collections")
 SOURCE_JSON     = Path("nuvio-collections.json")
 
-CANVAS_W, CANVAS_H = 1920, 1080
-PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
-FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
+# Canvas dimensions
+CANVAS_W, CANVAS_H     = 1920, 1080
+PORTRAIT_W, PORTRAIT_H = 680, 1000
 
-# Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
-# even a modest pool gives a full grid; 40 gives good visual variety.
-MAX_TILES = 40
+# Cover card tuning
+FOCUSED_DIM       = 0.50   # focused state dim (0=black, 1=no change)
+COLOR_INTENSITY   = 0.40   # color grade overlay strength
+GRADIENT_START    = 0.72   # where bottom fade begins, fraction from top
+GRADIENT_DARKNESS = 0.95   # max opacity of gradient at bottom
 
-TIMEOUT    = 20      # seconds per HTTP call
-RATE_SLEEP = 0.25    # polite rate limiting between image downloads
+MAX_TILES  = 40
+TIMEOUT    = 20
+RATE_SLEEP = 0.25
 
-# ─── Prism Tile Geometry Constants ────────────────────────────────────────────────────────────
-# Source: luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
+# --- Prism Tile Geometry Constants -------------------------------------------
 
-CARD_RADIUS = 9    # rounded-corner radius (px at 1x tile size)
-TILT_DEG    = 10   # clockwise tilt of the entire grid
-TILE_W      = 372  # nominal tile width  (at 1080p / scale=1.0)
-TILE_H      = 210  # nominal tile height (at 1080p / scale=1.0)
-GAP         = 9    # gap between tiles
-ROWS        = 10   # logical rows (buffer rows added internally)
-COLS        = 10   # logical cols (buffer cols added internally)
-STAGGER     = 0.5  # per-row horizontal offset as a fraction of (tile+gap)
-FOCUS_X     = 0.5  # horizontal focal point fraction (0=left, 1=right)
-FOCUS_Y     = 0.53 # vertical   focal point fraction (0=top,  1=bottom)
+CARD_RADIUS = 9
+TILT_DEG    = 10
+TILE_W      = 372
+TILE_H      = 210
+GAP         = 9
+ROWS        = 10
+COLS        = 10
+STAGGER     = 0.5
+FOCUS_X     = 0.5
+FOCUS_Y     = 0.53
 
-# ─── Font Candidates ─────────────────────────────────────────────────────────────────────────────
+# --- Font Candidates (regular weight) ----------------------------------------
 
 _FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
@@ -105,75 +109,64 @@ _FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
-# ─── Environment Validation ─────────────────────────────────────────────────────────────────
+# --- Emoji Stripping ---------------------------------------------------------
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F600-\U0001F64F"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F1E0-\U0001F1FF"
+    "\U00002500-\U00002BFF"
+    "\U0001F900-\U0001F9FF"
+    "\U00002702-\U000027B0"
+    "\U000024C2-\U0001F251"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def strip_emoji(text: str) -> str:
+    return _EMOJI_RE.sub("", text).strip()
+
+# --- Environment Validation --------------------------------------------------
 
 def validate_env() -> None:
     if not AIOMETADATA_URL and not TMDB_API_KEY:
         log.warning(
             "Neither AIOMETADATA_URL nor TMDB_API_KEY is set. "
-            "Catalogs with catalogSources will produce no images. "
-            "Set AIOMETADATA_URL to your AIOMetadata instance URL."
+            "Catalogs with catalogSources will produce no images."
         )
     elif not AIOMETADATA_URL:
-        log.info(
-            "AIOMETADATA_URL not set — provider/genre-specific catalogs will fall back "
-            "to TMDb Discover (TMDB_API_KEY present)."
-        )
+        log.info("AIOMETADATA_URL not set — falling back to TMDb Discover.")
 
-# ─── Manifest Discovery ────────────────────────────────────────────────────────────────────
+# --- Manifest Discovery ------------------------------------------------------
 
 def fetch_manifest_catalog_ids(base_url: str) -> set[str]:
-    """
-    Fetch manifest.json from the AIOMetadata URL and return the set of all
-    valid catalog IDs declared in it. Used to validate catalogSources entries
-    before attempting to fetch them, so failures are caught early and loudly.
-    """
-    url = f"{base_url}/manifest.json"
+    url  = f"{base_url}/manifest.json"
     log.info("Fetching manifest: %s", url)
     data = safe_get(url)
     if not data:
-        raise RuntimeError(
-            f"Could not fetch manifest from {url}. "
-            f"Check that AIOMETADATA_URL is set to your full user path "
-            f"(everything before /manifest.json in your Stremio install URL)."
-        )
-    catalogs = data.get("catalogs", [])
-    ids = {c["id"] for c in catalogs if "id" in c}
+        raise RuntimeError(f"Could not fetch manifest from {url}.")
+    ids = {c["id"] for c in data.get("catalogs", []) if "id" in c}
     log.info("Manifest loaded — %d catalog ID(s) available.", len(ids))
     return ids
 
-# ─── Fanart.tv Logo Fetching ─────────────────────────────────────────────────────────────────────
-#
-# Fetches English-only title logo PNGs from Fanart.tv.
-# Movies  → hdmovielogo (needs TMDB ID, resolved via TMDB /find)
-# Series  → hdtvlogo    (needs TVDB ID, resolved via TMDB /find + /external_ids)
-# Any logo whose lang != "en" is skipped entirely.
+# --- Fanart.tv Logo Fetching -------------------------------------------------
 
 def _resolve_fanart_id(item_id: str, media_type: str) -> "tuple[str, str] | None":
-    """
-    Convert an item ID to the (id, endpoint_type) Fanart.tv needs.
-    Handles IMDb (tt…) and TMDB (tmdb:…) prefixes. Anime IDs (kitsu:, mal:) are skipped.
-    """
     if not item_id or not TMDB_API_KEY:
         return None
-
-    # Path A: TMDB-prefixed ID — no lookup needed for movies
     if item_id.startswith("tmdb:"):
         tmdb_id = item_id.replace("tmdb:", "").strip()
         if not tmdb_id:
             return None
         if media_type == "movie":
             return tmdb_id, "movies"
-        # Series: Fanart wants TVDB ID, fetch from TMDB
-        ext = safe_get(
-            f"{TMDB_BASE}/tv/{tmdb_id}/external_ids",
-            {"api_key": TMDB_API_KEY},
-        )
+        ext = safe_get(f"{TMDB_BASE}/tv/{tmdb_id}/external_ids", {"api_key": TMDB_API_KEY})
         if ext and ext.get("tvdb_id"):
             return str(ext["tvdb_id"]), "tv"
         return tmdb_id, "tv"
-
-    # Path B: IMDb-prefixed ID — resolve via TMDB /find
     if item_id.startswith("tt"):
         find_data = safe_get(
             f"{TMDB_BASE}/find/{item_id}",
@@ -181,103 +174,70 @@ def _resolve_fanart_id(item_id: str, media_type: str) -> "tuple[str, str] | None
         )
         if not find_data:
             return None
-
         if media_type == "movie":
             results = find_data.get("movie_results", [])
             if results:
                 return str(results[0]["id"]), "movies"
             return None
-
-        # Series
         results = find_data.get("tv_results", [])
         if not results:
             return None
         tmdb_tv_id = results[0]["id"]
-        ext = safe_get(
-            f"{TMDB_BASE}/tv/{tmdb_tv_id}/external_ids",
-            {"api_key": TMDB_API_KEY},
-        )
+        ext = safe_get(f"{TMDB_BASE}/tv/{tmdb_tv_id}/external_ids", {"api_key": TMDB_API_KEY})
         if ext and ext.get("tvdb_id"):
             return str(ext["tvdb_id"]), "tv"
         return str(tmdb_tv_id), "tv"
-
-    # Unsupported ID format (kitsu:, mal:, anidb:, etc.)
     return None
 
 
 def fetch_fanart_logo(imdb_id: str, media_type: str) -> "Image.Image | None":
-    """
-    Return an RGBA PIL Image of the best English title logo from Fanart.tv,
-    or None if no English logo exists or FANART_API_KEY is not set.
-    Non-English logos are skipped entirely — no fallback to other languages.
-    """
     if not FANART_API_KEY:
         return None
-
     resolved = _resolve_fanart_id(imdb_id, media_type)
     if not resolved:
         return None
-
     fanart_id, fanart_type = resolved
     logo_key = "hdmovielogo" if fanart_type == "movies" else "hdtvlogo"
-
-    data = safe_get(
-        f"{FANART_BASE}/{fanart_type}/{fanart_id}",
-        {"api_key": FANART_API_KEY},
-    )
+    data = safe_get(f"{FANART_BASE}/{fanart_type}/{fanart_id}", {"api_key": FANART_API_KEY})
     if not data:
         return None
-
-    logos = data.get(logo_key, [])
+    logos    = data.get(logo_key, [])
     en_logos = [l for l in logos if l.get("lang") == "en"]
     if not en_logos:
-        return None  # no English logo — skip, do not use any other language
-
+        return None
     en_logos.sort(key=lambda l: int(l.get("likes", 0)), reverse=True)
     url = en_logos[0].get("url")
     if not url:
         return None
-
     return _download_logo_rgba(url)
 
 
 def composite_logo_on_tile(tile: Image.Image, logo: Image.Image) -> Image.Image:
-    """
-    Overlay an English title logo onto the bottom-left of a backdrop tile.
-    - Logo is scaled to fit within 65 % of tile width and 28 % of tile height.
-    - A soft dark gradient is applied behind the logo area for legibility.
-    - Returns a new RGBA image.
-    """
-    tw, th = tile.size
-    max_lw = int(tw * 0.65)
-    max_lh = int(th * 0.28)
-
-    lw, lh = logo.size
-    scale  = min(max_lw / lw, max_lh / lh, 1.0)
-    new_lw = max(1, int(lw * scale))
-    new_lh = max(1, int(lh * scale))
-    logo_r = logo.resize((new_lw, new_lh), Image.LANCZOS)
-
-    pad_x  = int(tw * 0.08)
-    pad_y  = int(th * 0.08)
-    logo_x = pad_x
-    logo_y = th - new_lh - pad_y
-
-    # Soft dark gradient behind the logo so it reads on any backdrop
-    shadow = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
-    draw   = ImageDraw.Draw(shadow)
+    tw, th   = tile.size
+    max_lw   = int(tw * 0.65)
+    max_lh   = int(th * 0.28)
+    lw, lh   = logo.size
+    scale    = min(max_lw / lw, max_lh / lh, 1.0)
+    new_lw   = max(1, int(lw * scale))
+    new_lh   = max(1, int(lh * scale))
+    logo_r   = logo.resize((new_lw, new_lh), Image.LANCZOS)
+    pad_x    = int(tw * 0.08)
+    pad_y    = int(th * 0.08)
+    logo_x   = pad_x
+    logo_y   = th - new_lh - pad_y
+    shadow   = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    draw     = ImageDraw.Draw(shadow)
     grad_top = max(0, logo_y - int(th * 0.06))
     for y in range(grad_top, th):
         t     = (y - grad_top) / max(1, th - grad_top)
         alpha = int(170 * (t ** 1.4))
         draw.line([(0, y), (tw, y)], fill=(0, 0, 0, alpha))
-
     result = tile.convert("RGBA")
     result = Image.alpha_composite(result, shadow)
     result.paste(logo_r, (logo_x, logo_y), logo_r)
     return result
 
-# ─── HTTP Helpers ──────────────────────────────────────────────────────────────────────────────
+# --- HTTP Helpers ------------------------------------------------------------
 
 def safe_get(url: str, params: dict | None = None, retries: int = 3) -> dict | None:
     for attempt in range(1, retries + 1):
@@ -285,7 +245,7 @@ def safe_get(url: str, params: dict | None = None, retries: int = 3) -> dict | N
             r = requests.get(url, params=params, timeout=TIMEOUT)
             if r.status_code == 429:
                 wait = int(r.headers.get("Retry-After", 5))
-                log.warning("Rate-limited — waiting %ds …", wait)
+                log.warning("Rate-limited — waiting %ds ...", wait)
                 time.sleep(wait)
                 continue
             if 400 <= r.status_code < 500:
@@ -310,38 +270,27 @@ def download_image(url: str) -> Image.Image | None:
 
 
 def _download_logo_rgba(url: str) -> "Image.Image | None":
-    """
-    Download a logo image keeping its original alpha channel.
-    Fanart.tv serves HD logos as PNGs with transparency; if the fetched image
-    has no alpha channel (e.g. an accidental JPEG), log a warning and return None.
-    """
     try:
         r = requests.get(url, timeout=TIMEOUT)
         r.raise_for_status()
         img = Image.open(io.BytesIO(r.content))
-        # Palette PNGs with a transparency entry can be converted cleanly
         if img.mode == "P" and "transparency" in img.info:
             return img.convert("RGBA")
         if img.mode not in ("RGBA", "LA"):
-            log.warning(
-                "Fanart.tv logo has no alpha channel (mode=%s) — skipping: %s",
-                img.mode, url,
-            )
+            log.warning("Fanart.tv logo has no alpha channel (mode=%s) — skipping: %s", img.mode, url)
             return None
         return img.convert("RGBA")
     except Exception as exc:
         log.warning("Logo download failed (%s): %s", url, exc)
         return None
 
-# ─── JSON Parsing ──────────────────────────────────────────────────────────────────────────────
+# --- JSON Parsing ------------------------------------------------------------
 
 def load_catalogs(json_path: Path) -> list[dict]:
-    log.info("Loading %s …", json_path)
+    log.info("Loading %s ...", json_path)
     with open(json_path, encoding="utf-8") as fh:
         data = json.load(fh)
     items = data if isinstance(data, list) else data.get("catalogs", [])
-    # New nested format: top-level items are groups with a "folders" array.
-    # Unwrap so downstream code always sees a flat list of catalog entries.
     flat: list[dict] = []
     for item in items:
         if "folders" in item:
@@ -352,58 +301,29 @@ def load_catalogs(json_path: Path) -> list[dict]:
 
 
 def parse_collection_id(catalog_id: str) -> tuple[str, str] | None:
-    """
-    Match IDs of the form  collections.{folder}.{catalog}  (exactly 3 segments).
-    Returns (folder, catalog_slug) or None if the pattern doesn't match.
-    """
     parts = catalog_id.split(".")
     if len(parts) == 3 and parts[0] == "collections":
         return parts[1], parts[2]
     return None
 
-# ─── Stremio Catalog Fetching (primary, unauthenticated) ──────────────────────────────────────────
-#
-# Calls {AIOMETADATA_URL}/catalog/{type}/{id}.json — a plain GET with no auth.
-# AIOMetadata handles any provider auth (Trakt, SIMKL, etc.) server-side;
-# those tokens are embedded in the user-specific AIOMETADATA_URL path.
-# On failure the catalog is skipped — no Cinemeta or any other fallback.
-
+# --- Stremio Catalog Fetching ------------------------------------------------
 
 def fetch_stremio_catalog(media_type: str, catalog_id: str) -> list[dict]:
-    """
-    Fetch metas from a Stremio addon catalog endpoint (unauthenticated GET).
-    Calls {AIOMETADATA_URL}/catalog/{type}/{id}.json directly.
-    If the call fails, logs an error and returns an empty list — no Cinemeta fallback.
-    """
     if not AIOMETADATA_URL:
-        log.error(
-            "AIOMETADATA_URL is not set. Cannot fetch catalog '%s/%s'.",
-            media_type, catalog_id,
-        )
+        log.error("AIOMETADATA_URL is not set. Cannot fetch catalog '%s/%s'.", media_type, catalog_id)
         return []
-
-    url = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
+    url  = f"{AIOMETADATA_URL}/catalog/{media_type}/{catalog_id}.json"
     log.info(" GET %s", url)
     data = safe_get(url)
-
     if data is not None:
         metas = data.get("metas", [])
-        log.info(" → %d meta(s)", len(metas))
+        log.info(" -> %d meta(s)", len(metas))
         return metas
-
-    log.error(
-        " AIOMetadata fetch failed for '%s/%s'. "
-        "Skipping — no fallback. Check your AIOMETADATA_URL secret and "
-        "confirm this catalog ID exists in your manifest.",
-        media_type, catalog_id,
-    )
+    log.error(" AIOMetadata fetch failed for '%s/%s'.", media_type, catalog_id)
     return []
 
+
 def backdrop_from_meta(meta: dict) -> Image.Image | None:
-    """
-    Download the landscape backdrop for a Stremio meta object.
-    Tries background/backgroundImage (landscape) first, then poster as fallback.
-    """
     time.sleep(RATE_SLEEP)
     for key in ("background", "backgroundImage"):
         url = meta.get(key)
@@ -418,9 +338,7 @@ def backdrop_from_meta(meta: dict) -> Image.Image | None:
 
 
 def get_catalog_sources(catalog: dict) -> list[dict]:
-    """Return normalized catalog sources, guaranteed to have an 'id' key."""
-    raw = catalog.get("catalogSources", catalog.get("sources", []))
-    # New format uses catalogId instead of id — normalize for uniform downstream use.
+    raw    = catalog.get("catalogSources", catalog.get("sources", []))
     result = []
     for src in raw:
         if "catalogId" in src and "id" not in src:
@@ -431,20 +349,10 @@ def get_catalog_sources(catalog: dict) -> list[dict]:
 
 def fetch_all_backdrops(
     catalog: dict, limit: int = MAX_TILES
-) -> tuple[list[Image.Image], "Image.Image | None"]:
-    """
-    Primary data path — mixes backdrops from every entry in catalogSources,
-    deduplicating by Stremio meta ID, capping at `limit` images.
-
-    Falls back to the TMDb-based resolver when catalogSources is absent
-    (backward-compatible with entries using metadata.discover.params).
-
-    Returns (backdrop_images_list, top_backdrop_or_None).
-    """
+) -> tuple[list[Image.Image], list, "Image.Image | None"]:
     sources = get_catalog_sources(catalog)
 
     if sources:
-        # ── Stremio path: call addon endpoints, mix movies + series ──────────────────
         all_metas: list[dict] = []
         seen: set[str] = set()
         for src in sources:
@@ -453,12 +361,11 @@ def fetch_all_backdrops(
                 mid = meta.get("id", "")
                 if mid and mid not in seen:
                     seen.add(mid)
-                    # Tag the media type so Fanart lookup knows movie vs series
                     meta["_fanart_type"] = src["type"]
                     all_metas.append(meta)
 
         backdrops: list[Image.Image] = []
-        logos:     list["Image.Image | None"] = []
+        logos: list["Image.Image | None"] = []
         top: Image.Image | None = None
         if not FANART_API_KEY:
             log.warning("FANART_API_KEY not set — skipping logo overlays for this catalog.")
@@ -469,23 +376,18 @@ def fetch_all_backdrops(
                 if top is None:
                     top = img
                 backdrops.append(img)
-
-                # Fetch English-only Fanart logo (skips if no EN logo exists)
                 logo: "Image.Image | None" = None
                 if FANART_API_KEY:
                     item_id  = meta.get("id", "")
                     src_type = meta.get("_fanart_type", "movie")
                     logo     = fetch_fanart_logo(item_id, src_type)
                     if logo:
-                        log.info("     ✓ EN logo — %s", name)
+                        log.info("     + EN logo -- %s", name)
                     else:
-                        log.info("     – no EN logo (id=%s, type=%s) — %s",
-                                 item_id, src_type, name)
+                        log.info("     - no EN logo (id=%s, type=%s) -- %s", item_id, src_type, name)
                 logos.append(logo)
-
         return backdrops, logos, top
 
-    # ── TMDb fallback path (no catalogSources field) ───────────────────────────────
     log.info("  No catalogSources — using TMDb resolver as fallback.")
     items     = resolve_items(catalog, limit)
     backdrops = []
@@ -494,15 +396,15 @@ def fetch_all_backdrops(
         title = item.get("title") or item.get("name") or "?"
         img   = fetch_backdrop_tmdb(item)
         if img:
-            log.info("    ✓ %s", title)
+            log.info("    + %s", title)
             if top is None:
                 top = img
             backdrops.append(img)
         else:
-            log.warning("    ✗ No backdrop — %s", title)
+            log.warning("    - No backdrop -- %s", title)
     return backdrops, [None] * len(backdrops), top
 
-# ─── TMDb Item Resolution (fallback when catalogSources is absent) ─────────────────────
+# --- TMDb Item Resolution (fallback) ----------------------------------------
 
 _AUTH_SOURCES  = {"trakt", "simkl"}
 _ANIME_SOURCES = {"kitsu", "mal", "anilist"}
@@ -519,16 +421,6 @@ _SLUG_ENDPOINT = {
 
 
 def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
-    """
-    Resolve a catalog definition to a ranked list of TMDb item dicts.
-    Each item will have '_tmdb_type' set to 'movie' or 'tv'.
-
-    Resolution priority:
-      1. metadata.discover.params  → TMDb Discover API
-      2. Anime source              → Discover (animation + Japanese)
-      3. Slug keyword match        → Named TMDb list endpoint
-      4. Fallback                  → TMDb popular
-    """
     cat_id    = catalog.get("id", "")
     source    = catalog.get("source", "").lower()
     cat_type  = catalog.get("type", "movie")
@@ -543,7 +435,6 @@ def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
             item["_tmdb_type"] = t
         return items_list
 
-    # 1. discover params block (most explicit)
     meta     = catalog.get("metadata", {})
     discover = meta.get("discover", {})
     if discover and "params" in discover:
@@ -554,7 +445,6 @@ def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
         items = (data or {}).get("results", [])
         return _tag(items, media_type)[:limit]
 
-    # 2. Anime sources
     if source in _ANIME_SOURCES or "anime" in cat_id:
         params = {
             "api_key": TMDB_API_KEY, "sort_by": "popularity.desc",
@@ -564,7 +454,6 @@ def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
         items = (data or {}).get("results", [])
         return _tag(items, tmdb_type)[:limit]
 
-    # 3. Slug keyword match
     parts = cat_id.split(".")
     slug  = parts[2].lower() if len(parts) >= 3 else cat_id.lower()
     for keyword, tpl in _SLUG_ENDPOINT.items():
@@ -574,53 +463,33 @@ def resolve_items(catalog: dict, limit: int = MAX_TILES) -> list[dict]:
             items = (data or {}).get("results", [])
             return _tag(items, tmdb_type)[:limit]
 
-    # 4. Generic popular fallback
     log.info("No specific route for '%s' — using TMDb popular.", name)
-    data  = safe_get(f"{TMDB_BASE}/{tmdb_type}/popular",
-                     {"api_key": TMDB_API_KEY, "language": "en-US"})
+    data  = safe_get(f"{TMDB_BASE}/{tmdb_type}/popular", {"api_key": TMDB_API_KEY, "language": "en-US"})
     items = (data or {}).get("results", [])
     return _tag(items, tmdb_type)[:limit]
 
 
 def fetch_backdrop_tmdb(item: dict) -> Image.Image | None:
-    """
-    Fetch the highest-quality landscape backdrop for a TMDb item dict.
-    Used only by the TMDb fallback path (when catalogSources is absent).
-    """
     tmdb_id   = str(item.get("id", ""))
     tmdb_type = item.get("_tmdb_type", "movie")
     if not tmdb_id:
         return None
-
     time.sleep(RATE_SLEEP)
-    data = safe_get(f"{TMDB_BASE}/{tmdb_type}/{tmdb_id}/images",
-                    {"api_key": TMDB_API_KEY})
+    data = safe_get(f"{TMDB_BASE}/{tmdb_type}/{tmdb_id}/images", {"api_key": TMDB_API_KEY})
     if data:
-        bds = sorted(data.get("backdrops", []),
-                     key=lambda b: b.get("vote_average", 0), reverse=True)
+        bds = sorted(data.get("backdrops", []), key=lambda b: b.get("vote_average", 0), reverse=True)
         if bds:
             img = download_image(f"{TMDB_IMG_BASE}/original{bds[0]['file_path']}")
             if img:
                 return img
-
     bp = item.get("backdrop_path")
     if bp:
         return download_image(f"{TMDB_IMG_BASE}/w1280{bp}")
     return None
 
-# ─── Prism Backdrop Engine ──────────────────────────────────────────────────────────────────────────────────
-#
-# Adapted from luckynumb3rs/stremio-perfect-setup  collections/scripts/backdrop.py
-#
-# Changes for our integration:
-#   • No TMDB API calls — we supply pre-downloaded PIL Images directly.
-#   • Canvas size fixed to 1920×1080 (scale=1.0).
-#   • Accent color derived deterministically from catalog slug (no cover scan).
-#   • render_prism_backdrop() is the single public entry point.
-
+# --- Prism Backdrop Engine ---------------------------------------------------
 
 def default_accent_for_label(label: str) -> tuple[int, int, int]:
-    """Derive a deterministic HSV-based accent color from the catalog slug."""
     seed = sum((i + 1) * ord(c) for i, c in enumerate(label or "Backdrop"))
     hue  = (seed % 360) / 360.0
     r, g, b = colorsys.hsv_to_rgb(hue, 0.65, 0.88)
@@ -640,11 +509,9 @@ def make_tile(
     tile_height: int,
     logo: "Image.Image | None" = None,
 ) -> Image.Image:
-    """Crop to ratio, resize, apply rounded-corner mask, and optionally overlay an
-    English title logo at the bottom-left of the tile. Returns an RGBA tile."""
     sw, sh = image.size
     target_ratio = tile_width / tile_height
-    src_ratio = sw / sh
+    src_ratio    = sw / sh
     if src_ratio > target_ratio:
         new_w = int(sh * target_ratio)
         left  = (sw - new_w) // 2
@@ -653,16 +520,13 @@ def make_tile(
         new_h = int(sw / target_ratio)
         top   = (sh - new_h) // 2
         image = image.crop((0, top, sw, top + new_h))
-
-    image        = image.resize((tile_width, tile_height), Image.LANCZOS)
+    image         = image.resize((tile_width, tile_height), Image.LANCZOS)
     scaled_radius = max(8, int(CARD_RADIUS * tile_width / TILE_W))
-    mask         = rounded_rect_mask(tile_width, tile_height, radius=scaled_radius)
-    result       = Image.new("RGBA", (tile_width, tile_height), (0, 0, 0, 0))
+    mask          = rounded_rect_mask(tile_width, tile_height, radius=scaled_radius)
+    result        = Image.new("RGBA", (tile_width, tile_height), (0, 0, 0, 0))
     result.paste(image, mask=mask)
-
     if logo is not None:
         result = composite_logo_on_tile(result, logo)
-
     return result
 
 
@@ -675,12 +539,6 @@ def build_tilted_grid(
     focus_y: float | None = None,
     logos: "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
-    """
-    Compose a staggered TILT_DEG-degree tilted grid of tile images onto a dark
-    canvas centred on the focal point.  Best images are placed closest to the
-    focal point; the pool is cycled to fill all grid slots.
-    Returns an RGBA image at (canvas_width, canvas_height).
-    """
     fx = FOCUS_X if focus_x is None else focus_x
     fy = FOCUS_Y if focus_y is None else focus_y
 
@@ -701,10 +559,8 @@ def build_tilted_grid(
     focal_x   = fx * grid_width
     focal_y   = fy * grid_height
     focal_row = max(0, min(rows - 1, int(focal_y / (tile_height + gap))))
-    focal_col = max(0, min(cols - 1,
-                           int((focal_x - focal_row * stagger_px) / (tile_width + gap))))
+    focal_col = max(0, min(cols - 1, int((focal_x - focal_row * stagger_px) / (tile_width + gap))))
 
-    # Sort cells nearest-to-focal first so the best images land at the focal area.
     cells = [(row, col) for row in range(rows) for col in range(cols)]
     cells.sort(key=lambda pos: abs(pos[0] - focal_row) + abs(pos[1] - focal_col))
 
@@ -720,14 +576,13 @@ def build_tilted_grid(
     rotated = grid.rotate(TILT_DEG, expand=True, resample=Image.BICUBIC)
     rw, rh  = rotated.size
 
-    # Map the focal point through the rotation transform to find where to anchor it.
-    angle_rad    = math.radians(-TILT_DEG)
-    pre_cx       = fx * grid_width  - grid_width  / 2
-    pre_cy       = fy * grid_height - grid_height / 2
-    rot_cx       = pre_cx * math.cos(angle_rad) - pre_cy * math.sin(angle_rad)
-    rot_cy       = pre_cx * math.sin(angle_rad) + pre_cy * math.cos(angle_rad)
-    focus_in_rx  = rw / 2 + rot_cx
-    focus_in_ry  = rh / 2 + rot_cy
+    angle_rad   = math.radians(-TILT_DEG)
+    pre_cx      = fx * grid_width  - grid_width  / 2
+    pre_cy      = fy * grid_height - grid_height / 2
+    rot_cx      = pre_cx * math.cos(angle_rad) - pre_cy * math.sin(angle_rad)
+    rot_cy      = pre_cx * math.sin(angle_rad) + pre_cy * math.cos(angle_rad)
+    focus_in_rx = rw / 2 + rot_cx
+    focus_in_ry = rh / 2 + rot_cy
 
     paste_x = int(canvas_width  / 2 - focus_in_rx)
     paste_y = int(canvas_height / 2 - focus_in_ry)
@@ -737,10 +592,7 @@ def build_tilted_grid(
     return canvas
 
 
-def ensure_minimum_tiles(
-    tile_images: list[Image.Image], minimum_count: int
-) -> list[Image.Image]:
-    """Repeat available tiles until we reach the minimum count for the grid."""
+def ensure_minimum_tiles(tile_images: list[Image.Image], minimum_count: int) -> list[Image.Image]:
     if len(tile_images) >= minimum_count or not tile_images:
         return tile_images
     padded = list(tile_images)
@@ -751,16 +603,7 @@ def ensure_minimum_tiles(
     return padded
 
 
-def apply_gradient(
-    canvas: Image.Image, accent: tuple[int, int, int]
-) -> Image.Image:
-    """
-    Composite four directional gradient overlays onto the canvas (RGBA in, RGBA out):
-      • dark left-edge fade   (readability for text rendered on focused/cover)
-      • dark bottom vignette  (grounds the grid)
-      • dark bottom-left corner radial
-      • accent-coloured top-right corner glow (blurred for a soft halo)
-    """
+def apply_gradient(canvas: Image.Image, accent: tuple[int, int, int]) -> Image.Image:
     width, height = canvas.size
 
     def make_linear_gradient(gw: int, gh: int, direction: str) -> Image.Image:
@@ -810,14 +653,13 @@ def apply_gradient(
 
         return img
 
-    # Corner gradients built at 1/4 size then scaled up (much faster per-pixel loop).
-    left_grad    = make_linear_gradient(width,      height,      "left")
-    bottom_grad  = make_linear_gradient(width,      height,      "bottom")
-    small_bl     = make_linear_gradient(width // 4, height // 4, "corner_bl")
-    corner_grad  = small_bl.resize((width, height), Image.BILINEAR)
-    small_tr     = make_linear_gradient(width // 4, height // 4, "corner_tr_color")
-    accent_grad  = small_tr.resize((width, height), Image.BILINEAR)
-    accent_grad  = accent_grad.filter(ImageFilter.GaussianBlur(radius=max(28, width // 64)))
+    left_grad   = make_linear_gradient(width,      height,      "left")
+    bottom_grad = make_linear_gradient(width,      height,      "bottom")
+    small_bl    = make_linear_gradient(width // 4, height // 4, "corner_bl")
+    corner_grad = small_bl.resize((width, height), Image.BILINEAR)
+    small_tr    = make_linear_gradient(width // 4, height // 4, "corner_tr_color")
+    accent_grad = small_tr.resize((width, height), Image.BILINEAR)
+    accent_grad = accent_grad.filter(ImageFilter.GaussianBlur(radius=max(28, width // 64)))
 
     result = Image.alpha_composite(canvas,  corner_grad)
     result = Image.alpha_composite(result,  left_grad)
@@ -831,15 +673,7 @@ def render_prism_backdrop(
     slug:   str,
     logos:  "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
-    """
-    Build a 1920x1080 Prism-style tilted-grid backdrop from downloaded PIL Images.
-    When logos is provided (parallel list to images), each tile gets its English
-    title logo overlaid at the bottom-left. Tiles without a logo are unmodified.
-    Accent color is derived deterministically from the catalog slug.
-    Returns an RGBA image.
-    """
     accent = default_accent_for_label(slug)
-    # Pad logos list to match the images list length if provided
     effective_logos: list["Image.Image | None"] = []
     if logos:
         effective_logos = list(logos) + [None] * max(0, len(images) - len(logos))
@@ -851,20 +685,9 @@ def render_prism_backdrop(
     )
     return apply_gradient(canvas, accent)
 
-# ─── T1 Backdrop Engine ──────────────────────────────────────────────────────────────────────
-#
-# Rendering functions extracted from bramst0ne/prism-wallpapers:
-#   backdrop_T1.py      → perspective warp + −10° rotation  (_t1_tilt output)
-#   backdrop_T1_flat.py → tilt only, no perspective warp    (_t1_flat output)
-#
-# TMDB/MDBList fetching, CLI argument parsing, and file saving from those scripts
-# are intentionally omitted — this pipeline already handles all of that.
-# Output resolution: 1920×1080 only (no 4K).
-
+# --- T1 Backdrop Engine ------------------------------------------------------
 
 class _T1Cfg:
-    """Configuration bundle for one T1 render pass (tilt or flat)."""
-
     __slots__ = (
         "tilt_deg", "offset_x", "offset_y",
         "landscape_w", "gap", "card_radius",
@@ -879,25 +702,23 @@ class _T1Cfg:
             setattr(self, k, v)
 
 
-# backdrop_T1.py — full perspective warp + −10° tilt
 _T1_TILT_CFG = _T1Cfg(
-    tilt_deg=-10,   offset_x=170,    offset_y=-80,
-    landscape_w=400, gap=8,          card_radius=8,
-    fade_left=0.30, fade_right=1.00,
-    pov_x=1.0,      pov_y=-1.0,     warp_strength=0.37,
+    tilt_deg=-10,    offset_x=170,    offset_y=-80,
+    landscape_w=400, gap=8,           card_radius=8,
+    fade_left=0.30,  fade_right=1.00,
+    pov_x=1.0,       pov_y=-1.0,      warp_strength=0.37,
     dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
-    focus_x=0.70,   focus_y=0.20,   focus_radius=0.35,
+    focus_x=0.70,    focus_y=0.20,    focus_radius=0.35,
     stagger_axis="row",
 )
 
-# backdrop_T1_flat.py — −10° tilt only, perspective warp disabled
 _T1_FLAT_CFG = _T1Cfg(
-    tilt_deg=-10,   offset_x=170,    offset_y=-80,
-    landscape_w=400, gap=8,          card_radius=8,
-    fade_left=0.30, fade_right=1.00,
-    pov_x=0.0,      pov_y=0.0,      warp_strength=0.0,
+    tilt_deg=-10,    offset_x=170,    offset_y=-80,
+    landscape_w=400, gap=8,           card_radius=8,
+    fade_left=0.30,  fade_right=1.00,
+    pov_x=0.0,       pov_y=0.0,       warp_strength=0.0,
     dof_blur_max=10.0, dof_focus_x=0.75, dof_focus_y=0.25, dof_falloff=1.5,
-    focus_x=0.75,   focus_y=0.50,   focus_radius=0.35,
+    focus_x=0.75,    focus_y=0.50,    focus_radius=0.35,
     stagger_axis="row",
 )
 
@@ -1041,7 +862,6 @@ def _t1_build_layout(
                 src = repeat_rest[rest_idx % len(repeat_rest)]
                 rest_idx += 1
             else:
-                # rest pool empty (very few images) — reuse pri pool
                 src = repeat_pri[pri_idx % len(repeat_pri)]
                 pri_idx += 1
         src_img, src_logo = src
@@ -1068,9 +888,7 @@ def _t1_perspective_warp(
         if cfg.tilt_deg != 0:
             center_x = shifted_ox + out_w / 2
             center_y = shifted_oy + out_h / 2
-            rotated  = oversized.rotate(
-                -cfg.tilt_deg, resample=Image.BICUBIC, center=(center_x, center_y)
-            )
+            rotated  = oversized.rotate(-cfg.tilt_deg, resample=Image.BICUBIC, center=(center_x, center_y))
             return rotated.crop((shifted_ox, shifted_oy, shifted_ox + out_w, shifted_oy + out_h))
         return oversized.crop((shifted_ox, shifted_oy, shifted_ox + out_w, shifted_oy + out_h))
 
@@ -1081,28 +899,23 @@ def _t1_perspective_warp(
 
     if cfg.pov_x > 0:
         inset_y = (out_h * cfg.warp_strength * abs(cfg.pov_x)) / 2
-        tl_y   += inset_y
-        bl_y   -= inset_y
+        tl_y += inset_y
+        bl_y -= inset_y
     elif cfg.pov_x < 0:
         inset_y = (out_h * cfg.warp_strength * abs(cfg.pov_x)) / 2
-        tr_y   += inset_y
-        br_y   -= inset_y
+        tr_y += inset_y
+        br_y -= inset_y
 
     if cfg.pov_y > 0:
         inset_x = (out_w * cfg.warp_strength * abs(cfg.pov_y)) / 2
-        tl_x   += inset_x
-        tr_x   -= inset_x
+        tl_x += inset_x
+        tr_x -= inset_x
     elif cfg.pov_y < 0:
         inset_x = (out_w * cfg.warp_strength * abs(cfg.pov_y)) / 2
-        bl_x   += inset_x
-        br_x   -= inset_x
+        bl_x += inset_x
+        br_x -= inset_x
 
-    src_pts = [
-        (ox,         oy),
-        (ox + out_w, oy),
-        (ox + out_w, oy + out_h),
-        (ox,         oy + out_h),
-    ]
+    src_pts = [(ox, oy), (ox + out_w, oy), (ox + out_w, oy + out_h), (ox, oy + out_h)]
     dst_pts = [(tl_x, tl_y), (tr_x, tr_y), (br_x, br_y), (bl_x, bl_y)]
 
     A: list[list[float]] = []
@@ -1114,12 +927,8 @@ def _t1_perspective_warp(
         bv.append(sy)
 
     try:
-        coeffs = np.linalg.solve(
-            np.array(A, dtype=np.float64), np.array(bv, dtype=np.float64)
-        )
-        return oversized.transform(
-            (out_w, out_h), Image.PERSPECTIVE, tuple(coeffs), resample=Image.BICUBIC
-        )
+        coeffs = np.linalg.solve(np.array(A, dtype=np.float64), np.array(bv, dtype=np.float64))
+        return oversized.transform((out_w, out_h), Image.PERSPECTIVE, tuple(coeffs), resample=Image.BICUBIC)
     except Exception:
         return oversized.crop((ox, oy, ox + out_w, oy + out_h))
 
@@ -1160,9 +969,7 @@ def _t1_apply_dof(image: Image.Image, scale: float, cfg: "_T1Cfg") -> Image.Imag
     return Image.fromarray(out.clip(0, 255).astype(np.uint8), image.mode)
 
 
-def _t1_apply_gradient(
-    canvas: Image.Image, accent: "tuple[int, int, int]"
-) -> Image.Image:
+def _t1_apply_gradient(canvas: Image.Image, accent: "tuple[int, int, int]") -> Image.Image:
     w, h = canvas.size
     ar, ag, ab = accent
 
@@ -1213,24 +1020,14 @@ def render_t1_backdrop(
     variant: str = "tilt",
     logos:   "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
-    """
-    Render a 1920×1080 T1-style backdrop from pre-fetched PIL Images.
-    variant='tilt' → perspective warp + −10° rotation  (backdrop_T1.py style).
-    variant='flat' → −10° tilt only, no perspective    (backdrop_T1_flat.py style).
-    logos, when provided, is a parallel list to images; each non-None entry is an
-    RGBA PNG logo composited onto the bottom-left of its corresponding tile.
-    Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
-    """
     cfg    = _T1_TILT_CFG if variant == "tilt" else _T1_FLAT_CFG
     accent = default_accent_for_label(slug)
 
-    # Pair each image with its logo so logos survive the minimum-tile padding step.
     n           = len(images)
     eff_logos   = list(logos) if logos else []
     eff_logos  += [None] * max(0, n - len(eff_logos))
     pairs       = list(zip(images, eff_logos[:n]))
 
-    # Pad to minimum 4 pairs, cycling the existing pairs (logos stay attached).
     minimum = 4
     if 0 < len(pairs) < minimum:
         for img, logo in itertools.cycle(pairs):
@@ -1243,21 +1040,9 @@ def render_t1_backdrop(
     dof          = _t1_apply_dof(warped, scale=1.0, cfg=cfg)
     return _t1_apply_gradient(dof, accent)
 
-
-# ─── T2 Backdrop Engine ──────────────────────────────────────────────────────────────────────
-#
-# Rendering functions ported from bramst0ne/prism-wallpapers:
-#   backdrop_T2.py      → mixed portrait+landscape columns, perspective warp + −10° rotation  (_t2_tilt output)
-#   backdrop_T2_flat.py → same column layout, tilt only, no perspective warp                  (_t2_flat output)
-#
-# TMDB/MDBList fetching, CLI argument parsing, and file saving are intentionally omitted.
-# Output resolution: 1920×1080 only (no 4K).
-# Perspective warp, DOF blur, and gradient reuse the shared _t1_* helpers.
-
+# --- T2 Backdrop Engine ------------------------------------------------------
 
 class _T2Cfg:
-    """Configuration bundle for one T2 render pass (tilt or flat)."""
-
     __slots__ = (
         "tilt_deg", "offset_x", "offset_y",
         "landscape_w", "portrait_w", "gap", "card_radius",
@@ -1273,7 +1058,6 @@ class _T2Cfg:
             setattr(self, k, v)
 
 
-# backdrop_T2.py — mixed P+L columns, full perspective warp + −10° tilt
 _T2_TILT_CFG = _T2Cfg(
     tilt_deg=-10,     offset_x=335,         offset_y=100,
     landscape_w=300,  portrait_w=200,       gap=8,            card_radius=8,
@@ -1285,7 +1069,6 @@ _T2_TILT_CFG = _T2Cfg(
     focus_x=0.75,     focus_y=0.25,         focus_radius=0.30,
 )
 
-# backdrop_T2_flat.py — mixed P+L columns, −10° tilt only, perspective warp disabled
 _T2_FLAT_CFG = _T2Cfg(
     tilt_deg=-10,     offset_x=335,         offset_y=100,
     landscape_w=300,  portrait_w=200,       gap=8,            card_radius=8,
@@ -1298,17 +1081,12 @@ _T2_FLAT_CFG = _T2Cfg(
 )
 
 
-def _t2_pick_next(
-    items: "list[dict]",
-    placed_ids: "set[int]",
-    repeat_state: "dict",
-) -> "dict":
-    """Return the next unused item; once all are placed, cycle from the beginning."""
+def _t2_pick_next(items: "list[dict]", placed_ids: "set[int]", repeat_state: "dict") -> "dict":
     for item in items:
         if item["id"] not in placed_ids:
             placed_ids.add(item["id"])
             return item
-    idx = repeat_state.get("idx", 0)
+    idx    = repeat_state.get("idx", 0)
     chosen = items[idx % len(items)]
     repeat_state["idx"] = idx + 1
     return chosen
@@ -1350,12 +1128,7 @@ def _t2_build_layout(
         else:
             sf = 1.0
         col_w = max(50, int(base_w * sf))
-        columns.append({
-            "x":       cur_x + ox,
-            "w":       col_w,
-            "type":    col_type,
-            "stagger": pattern_idx % 2 == 1,
-        })
+        columns.append({"x": cur_x + ox, "w": col_w, "type": col_type, "stagger": pattern_idx % 2 == 1})
         cur_x       += col_w + gap
         pattern_idx += 1
 
@@ -1397,13 +1170,6 @@ def render_t2_backdrop(
     variant: str = "tilt",
     logos:   "list[Image.Image | None] | None" = None,
 ) -> Image.Image:
-    """
-    Render a 1920×1080 T2-style backdrop from pre-fetched PIL Images.
-    variant='tilt' → mixed portrait+landscape columns, perspective warp + −10° rotation.
-    variant='flat' → same column layout, −10° tilt only, no perspective warp.
-    Perspective warp, DOF, and gradient are handled by the shared T1 helpers.
-    Returns an RGBA image; save_dual() converts to RGB before writing JPEG/WebP.
-    """
     cfg    = _T2_TILT_CFG if variant == "tilt" else _T2_FLAT_CFG
     accent = default_accent_for_label(slug)
 
@@ -1426,26 +1192,7 @@ def render_t2_backdrop(
     dof          = _t1_apply_dof(warped, scale=1.0, cfg=cfg)
     return _t1_apply_gradient(dof, accent)
 
-
-# ─── Emoji Stripping ──────────────────────────────────────────────────────────────────────────
-
-def strip_emoji(text: str) -> str:
-    """Remove emoji characters from text, collapsing surrounding whitespace."""
-    emoji_re = re.compile(
-        "["
-        "\U0001F600-\U0001F64F"
-        "\U0001F300-\U0001F5FF"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF"
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "]+",
-        flags=re.UNICODE,
-    )
-    return emoji_re.sub("", text).strip()
-
-
-# ─── Cover / Focused Cards (Apple TV+ style cinematic gradient + title) ─────────────────────
+# --- Cover Card Helpers ------------------------------------------------------
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -1461,7 +1208,7 @@ def _load_font(size: int, font_path: str | None = None):
             return ImageFont.truetype(path, size)
         except Exception:
             pass
-    log.warning("Helvetica-equivalent font not found — using Pillow built-in.")
+    log.warning("Sans-serif font not found — using Pillow built-in.")
     return ImageFont.load_default()
 
 
@@ -1473,8 +1220,7 @@ def _text_bbox(text: str, font) -> tuple[int, int]:
 
 
 def _fit_font(text: str, max_w: int, max_h: int, font_path: str | None):
-    """Binary-search for the largest font size that fits text within max_w x max_h."""
-    lo, hi = 28, 300
+    lo, hi = 18, 300
     best   = _load_font(lo, font_path)
     while lo <= hi:
         mid    = (lo + hi) // 2
@@ -1499,112 +1245,151 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
     return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
 
 
-def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Image.Image:
+def extract_dominant_color(
+    img: Image.Image, sample_height_pct: float = 0.40
+) -> tuple[int, int, int]:
     """
-    Apply a bold diagonal color-grade overlay tinted with accent_rgb.
-    Gradient runs top-left (most vivid, ~75% opacity) to bottom-right
-    (~45% opacity) so the photo reads through cinema-poster style.
+    Sample the average color from the bottom 40% of the image.
+    Resizes the region to 1x1 via LANCZOS for a perceptually weighted average.
+    This color is used for both the grade overlay and the gradient endpoint,
+    so each card's fade inherits its own image palette rather than plain black.
     """
-    w, h = img.size
-    ar, ag, ab = accent_rgb
-
-    xs = np.linspace(1.0, 0.0, w, dtype=np.float32)
-    ys = np.linspace(1.0, 0.0, h, dtype=np.float32)
-    xg, yg = np.meshgrid(xs, ys)
-    mask  = (xg + yg) * 0.5                                       # [0.0, 1.0] diagonal
-    alpha = ((0.30 + mask * 0.25) * 255).clip(0, 255).astype(np.uint8)  # [0.30, 0.55]
-
-    overlay = np.zeros((h, w, 4), dtype=np.uint8)
-    overlay[:, :, 0] = ar
-    overlay[:, :, 1] = ag
-    overlay[:, :, 2] = ab
-    overlay[:, :, 3] = alpha
-
-    return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
+    w, h     = img.size
+    sample_y = int(h * (1.0 - sample_height_pct))
+    region   = img.crop((0, sample_y, w, h)).convert("RGB")
+    tiny     = region.resize((1, 1), Image.LANCZOS)
+    return tiny.getpixel((0, 0))[:3]
 
 
-def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
+def darken_color(rgb: tuple[int, int, int], factor: float = 0.10) -> tuple[int, int, int]:
     """
-    Composite a smooth cinematic bottom-gradient vignette onto `img` then
-    render the catalog title centred in the bottom 20% of the image.
-
-    The gradient starts fully transparent at ~72% of image height and fades
-    to solid near-black (#0a0a0a) by the bottom edge — no hard panel boundary.
+    Return a heavily darkened version of rgb.
+    factor=0.10 gives 10% brightness — very dark but still tinted,
+    suitable as a gradient endpoint so the fade feels native to the image.
     """
-    w, h   = img.size
-    result = img.convert("RGBA")
+    r, g, b = rgb
+    return (int(r * factor), int(g * factor), int(b * factor))
 
-    # Gradient: transparent at 72%, near-black (#0a0a0a) at 100%
-    grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
-    grad_start = int(h * 0.72)
-    if grad_start < h:
-        ys    = np.arange(0, h - grad_start, dtype=np.float32)
-        t     = ys / max(1.0, h - grad_start - 1)
-        alpha = (255 * np.clip(t ** 1.2, 0.0, 1.0)).astype(np.uint8)
-        grad_arr[grad_start:, :, 0] = 10
-        grad_arr[grad_start:, :, 1] = 10
-        grad_arr[grad_start:, :, 2] = 10
-        grad_arr[grad_start:, :, 3] = alpha[:, np.newaxis]
 
-    result = Image.alpha_composite(result, Image.fromarray(grad_arr, "RGBA"))
+def _apply_color_grade(img: Image.Image, dominant_rgb: tuple[int, int, int]) -> Image.Image:
+    """
+    Subtle color grade using the image's own dominant color.
+    The tint radiates from the top-left corner (strongest) and fades
+    toward the bottom-right so the subject area stays natural.
+    Uses numpy — no per-pixel Python loops.
+    """
+    w, h    = img.size
+    r, g, b = dominant_rgb
 
-    # Title centred horizontally in the bottom 20%
-    text_zone_top = int(h * 0.80)
-    text_zone_h   = h - text_zone_top
+    xs = np.linspace(0.0, 1.0, w, dtype=np.float32)
+    ys = np.linspace(0.0, 1.0, h, dtype=np.float32)
+    xg, yg   = np.meshgrid(xs, ys)
+    dist_map = np.sqrt(xg ** 2 + yg ** 2) / math.sqrt(2)
+    t_map    = np.clip(1.0 - dist_map / 0.75, 0.0, 1.0) ** 1.6
+    alpha_map = (t_map * COLOR_INTENSITY * 255).astype(np.uint8)
+
+    overlay_arr          = np.zeros((h, w, 4), dtype=np.uint8)
+    overlay_arr[:, :, 0] = r
+    overlay_arr[:, :, 1] = g
+    overlay_arr[:, :, 2] = b
+    overlay_arr[:, :, 3] = alpha_map
+
+    overlay = Image.fromarray(overlay_arr, "RGBA")
+    base    = img.convert("RGBA")
+    result  = Image.alpha_composite(base, overlay)
+    return result.convert("RGB")
+
+
+def _render_bottom_gradient(
+    img: Image.Image,
+    label: str,
+    dominant_rgb: tuple[int, int, int],
+) -> Image.Image:
+    """
+    Composite a bottom gradient that fades from transparent at GRADIENT_START
+    to a darkened version of the image's dominant color at the very bottom.
+    This matches the style seen in Nuvio's title cards where each card's fade
+    inherits its own palette rather than fading to generic black.
+    Then renders the catalog label centred in the gradient area.
+    """
+    w, h         = img.size
+    grad_start_y = int(h * GRADIENT_START)
+    grad_height  = h - grad_start_y
+    er, eg, eb   = darken_color(dominant_rgb, factor=0.10)
+
+    if grad_height > 0:
+        t_arr     = np.linspace(0.0, 1.0, grad_height, dtype=np.float32)
+        alpha_arr = np.clip(255 * GRADIENT_DARKNESS * (t_arr ** 1.3), 0, 255).astype(np.uint8)
+
+        grad_arr             = np.zeros((h, w, 4), dtype=np.uint8)
+        grad_arr[grad_start_y:, :, 0] = er
+        grad_arr[grad_start_y:, :, 1] = eg
+        grad_arr[grad_start_y:, :, 2] = eb
+        for i, alpha in enumerate(alpha_arr):
+            grad_arr[grad_start_y + i, :, 3] = alpha
+
+        grad_layer = Image.fromarray(grad_arr, "RGBA")
+    else:
+        grad_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+    result = Image.alpha_composite(img.convert("RGBA"), grad_layer)
+
     font_path = _find_font_path()
-    max_tw    = int(w * 0.90)
-    max_th    = int(text_zone_h * 0.60)
+    panel_h   = max(1, h - grad_start_y)
+    max_tw    = int(w * 0.82)
+    max_th    = int(panel_h * 0.52)
     font      = _fit_font(label, max_tw, max_th, font_path)
     tw, th    = _text_bbox(label, font)
     tx        = (w - tw) // 2
-    ty        = text_zone_top + (text_zone_h - th) // 2
-    ImageDraw.Draw(result).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
+    ty        = grad_start_y + (panel_h - th) // 2
 
-    return result
+    text_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(text_layer).text((tx, ty), label, font=font, fill=(255, 255, 255, 255))
+    result = Image.alpha_composite(result, text_layer)
+    return result.convert("RGB")
 
 
 def render_cover_card(
-    backdrop: Image.Image,
-    label: str,
-    orientation: str,
-    focused: bool,
-    accent_rgb: tuple[int, int, int] = (180, 120, 60),
+    backdrop:    Image.Image,
+    label:       str,
+    orientation: str  = "landscape",
+    focused:     bool = False,
 ) -> Image.Image:
     """
-    Render a cover card in Apple TV+ style.
-    orientation: 'landscape' (1920x1080) or 'portrait' (680x1000).
-    accent_rgb:   deterministic catalog color — bold diagonal gradient overlay.
-    focused=True  → color grade, then dimmed to FOCUSED_DIM, then bottom gradient + title.
-    focused=False → color grade, then full-brightness bottom gradient + title.
-    Returns an RGB image.
+    Render a single cover card from a backdrop image.
+
+    orientation : 'landscape' -> 1920x1080
+                  'portrait'  -> 680x1000
+    focused     : True  -> dim the image (focus state)
+                  False -> full brightness
+
+    Both states receive a color grade + adaptive bottom gradient + label.
     """
     if orientation == "portrait":
-        out_w, out_h = PORTRAIT_W, PORTRAIT_H
+        w, h = PORTRAIT_W, PORTRAIT_H
     else:
-        out_w, out_h = CANVAS_W, CANVAS_H
+        w, h = CANVAS_W, CANVAS_H
 
-    bg = _crop_to_ratio(backdrop.convert("RGBA"), out_w, out_h).resize(
-        (out_w, out_h), Image.LANCZOS
-    )
-    bg = _apply_color_grade(bg, accent_rgb)
+    img      = _crop_to_ratio(backdrop.convert("RGB"), w, h).resize((w, h), Image.LANCZOS)
+    dominant = extract_dominant_color(img)
+    img      = _apply_color_grade(img, dominant)
+
     if focused:
-        black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
-        bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
+        black = Image.new("RGB", (w, h), (0, 0, 0))
+        img   = Image.blend(img, black, alpha=FOCUSED_DIM)
 
-    return _render_bottom_gradient_text(bg, label).convert("RGB")
+    return _render_bottom_gradient(img, label, dominant)
 
-# ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
+# --- I/O Helpers -------------------------------------------------------------
 
 def save_dual(img: Image.Image, base_path: Path) -> None:
-    """Write image as both .jpg and .webp next to each other."""
     rgb = img.convert("RGB")
     rgb.save(base_path.with_suffix(".jpg"),  "JPEG", quality=92, optimize=True)
     rgb.save(base_path.with_suffix(".webp"), "WEBP", quality=85, method=6)
 
 
 def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
-    """Return True if all outputs for the given mode already exist on disk."""
-    base: Path        = COLLECTIONS_DIR / folder
+    base: Path         = COLLECTIONS_DIR / folder
     checks: list[Path] = []
 
     if mode in ("all", "backdrop"):
@@ -1617,25 +1402,25 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
 
     if mode in ("all", "covers"):
         for t in ("focused", "cover"):
-            for orient in ("landscape", "portrait"):
+            for suffix in ("_landscape", "_portrait"):
                 for ext in (".jpg", ".webp"):
-                    checks.append(base / t / f"{slug}_{orient}{ext}")
+                    checks.append(base / t / f"{slug}{suffix}{ext}")
 
     return all(p.exists() for p in checks)
 
-# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────────────────
+# --- Per-catalog Orchestration -----------------------------------------------
 
 def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: str = "all") -> None:
     name = catalog.get("name") or catalog.get("title") or slug
-    base = COLLECTIONS_DIR / folder   # collections/{folder}/
+    base = COLLECTIONS_DIR / folder
 
     do_backdrop = mode in ("all", "backdrop")
     do_covers   = mode in ("all", "covers")
 
     log.info("")
-    log.info("━" * 62)
+    log.info("=" * 62)
     log.info("Catalog  : %s  [%s/%s]  mode=%s", name, folder, slug, mode)
-    log.info("━" * 62)
+    log.info("=" * 62)
 
     for asset_type in ("backdrop", "cover", "focused", "title"):
         (base / asset_type).mkdir(parents=True, exist_ok=True)
@@ -1647,66 +1432,74 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
     top_backdrop: "Image.Image | None" = None
 
     if do_backdrop:
-        log.info("  Fetching backdrop artwork …")
+        log.info("  Fetching backdrop artwork ...")
         backdrops, logos, top_backdrop = fetch_all_backdrops(catalog)
         if not backdrops:
             log.warning("  No backdrop images fetched — skipping render.")
             return
         log.info("  Fetched %d backdrop image(s).", len(backdrops))
-        log.info("  Rendering Prism backdrop …")
+
+        log.info("  Rendering Prism backdrop ...")
         prism = render_prism_backdrop(backdrops, slug, logos=logos)
         save_dual(prism, base / "backdrop" / slug)
-        log.info("  ✓  backdrop/%s.jpg + .webp", slug)
+        log.info("  + backdrop/%s.jpg + .webp", slug)
 
-        log.info("  Rendering T1 tilt backdrop …")
+        log.info("  Rendering T1 tilt backdrop ...")
         t1_tilt = render_t1_backdrop(backdrops, slug, "tilt", logos=logos)
         save_dual(t1_tilt, base / "backdrop" / f"{slug}_t1_tilt")
-        log.info("  ✓  backdrop/%s_t1_tilt.jpg + .webp", slug)
+        log.info("  + backdrop/%s_t1_tilt.jpg + .webp", slug)
 
-        log.info("  Rendering T1 flat backdrop …")
+        log.info("  Rendering T1 flat backdrop ...")
         t1_flat = render_t1_backdrop(backdrops, slug, "flat", logos=logos)
         save_dual(t1_flat, base / "backdrop" / f"{slug}_t1_flat")
-        log.info("  ✓  backdrop/%s_t1_flat.jpg + .webp", slug)
+        log.info("  + backdrop/%s_t1_flat.jpg + .webp", slug)
 
-        log.info("  Rendering T2 tilt backdrop …")
+        log.info("  Rendering T2 tilt backdrop ...")
         t2_tilt = render_t2_backdrop(backdrops, slug, "tilt", logos=logos)
         save_dual(t2_tilt, base / "backdrop" / f"{slug}_t2_tilt")
-        log.info("  ✓  backdrop/%s_t2_tilt.jpg + .webp", slug)
+        log.info("  + backdrop/%s_t2_tilt.jpg + .webp", slug)
 
-        log.info("  Rendering T2 flat backdrop …")
+        log.info("  Rendering T2 flat backdrop ...")
         t2_flat = render_t2_backdrop(backdrops, slug, "flat", logos=logos)
         save_dual(t2_flat, base / "backdrop" / f"{slug}_t2_flat")
-        log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
+        log.info("  + backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
-        # ALWAYS fetch a fresh textless backdrop (the most recently added /
-        # most popular item) — never re-use the tiled prism image.
         if top_backdrop is None:
-            log.info("  Fetching backdrop for cover cards …")
+            log.info("  Fetching backdrop for cover cards ...")
             _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
 
         if top_backdrop is None:
             log.warning("  No image available for cover cards — skipping covers.")
             return
 
-        label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
-        accent = default_accent_for_label(slug)
-        log.info("  Cover label: %s  accent: rgb%s", label, accent)
+        raw_title = (catalog.get("title") or slug).strip()
+        label     = strip_emoji(raw_title)
+        log.info("  Cover label: %s", label)
 
-        for orientation in ("landscape", "portrait"):
-            for focused_flag in (True, False):
-                variant = "focused" if focused_flag else "cover"
-                log.info("  Rendering %s %s …", variant, orientation)
-                card = render_cover_card(
-                    top_backdrop, label, orientation,
-                    focused=focused_flag, accent_rgb=accent,
-                )
-                save_dual(card, base / variant / f"{slug}_{orientation}")
-                log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)
+        log.info("  Rendering landscape cover ...")
+        cover_land = render_cover_card(top_backdrop, label, orientation="landscape", focused=False)
+        save_dual(cover_land, base / "cover" / f"{slug}_landscape")
+        log.info("    + cover/%s_landscape.jpg + .webp", slug)
+
+        log.info("  Rendering landscape focused ...")
+        foc_land = render_cover_card(top_backdrop, label, orientation="landscape", focused=True)
+        save_dual(foc_land, base / "focused" / f"{slug}_landscape")
+        log.info("    + focused/%s_landscape.jpg + .webp", slug)
+
+        log.info("  Rendering portrait cover ...")
+        cover_port = render_cover_card(top_backdrop, label, orientation="portrait", focused=False)
+        save_dual(cover_port, base / "cover" / f"{slug}_portrait")
+        log.info("    + cover/%s_portrait.jpg + .webp", slug)
+
+        log.info("  Rendering portrait focused ...")
+        foc_port = render_cover_card(top_backdrop, label, orientation="portrait", focused=True)
+        save_dual(foc_port, base / "focused" / f"{slug}_portrait")
+        log.info("    + focused/%s_portrait.jpg + .webp", slug)
 
     log.info("  title/ initialized (manual assets preserved).")
 
-# ─── CLI & Entry Point ───────────────────────────────────────────────────────────────────────────
+# --- CLI & Entry Point -------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -1719,42 +1512,20 @@ Target examples:
   --target recommended   Process the specific 'recommended' catalog only
 """,
     )
-    parser.add_argument(
-        "--target",
-        default="all",
-        metavar="TARGET",
-        help="Folder name, catalog slug, or 'all' (default: all)",
-    )
-    parser.add_argument(
-        "--json",
-        default=str(SOURCE_JSON),
-        metavar="PATH",
-        help="Path to nuvio-collections.json (default: nuvio-collections.json)",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Regenerate assets even if output files already exist",
-    )
-    parser.add_argument(
-        "--mode",
-        default="all",
-        choices=["all", "backdrop", "covers"],
-        help="Which asset types to generate: all | backdrop | covers (default: all)",
-    )
+    parser.add_argument("--target",  default="all",   metavar="TARGET", help="Folder name, catalog slug, or 'all' (default: all)")
+    parser.add_argument("--json",    default=str(SOURCE_JSON), metavar="PATH", help="Path to nuvio-collections.json")
+    parser.add_argument("--force",   action="store_true", help="Regenerate assets even if output files already exist")
+    parser.add_argument("--mode",    default="all",   choices=["all", "backdrop", "covers"], help="all | backdrop | covers (default: all)")
     args = parser.parse_args()
 
-    log.info("╔═════════════════════════════════════════════════════════╗")
-    log.info("║          Nuvio TV · Catalog Asset Generator              ║")
-    log.info("║          mode: %-40s║", args.mode)
-    log.info("╚═════════════════════════════════════════════════════════╝")
+    log.info("Nuvio TV - Catalog Asset Generator  mode=%s", args.mode)
 
     validate_env()
 
     manifest_catalog_ids: set[str] = set()
     if AIOMETADATA_URL:
         manifest_catalog_ids = fetch_manifest_catalog_ids(AIOMETADATA_URL)
-  
+
     json_path = Path(args.json)
     if not json_path.exists():
         log.error("Config file not found: %s", json_path)
@@ -1778,31 +1549,19 @@ Target examples:
             matched.append((catalog, folder, slug))
 
     if not matched:
-        log.warning(
-            "No matching collections.* catalogs found for --target '%s'. "
-            "Check that nuvio-collections.json has IDs matching "
-            "'collections.{folder}.{catalog}'.",
-            target,
-        )
+        log.warning("No matching collections.* catalogs found for --target '%s'.", target)
         sys.exit(0)
 
-    log.info(
-        "Processing %d catalog(s) for --target='%s' --mode='%s' (force=%s).",
-        len(matched), target, args.mode, args.force,
-    )
+    log.info("Processing %d catalog(s) for --target='%s' --mode='%s' (force=%s).", len(matched), target, args.mode, args.force)
 
     errors = 0
-    # Warn about any catalogSources IDs not found in the manifest
     if manifest_catalog_ids:
         for catalog, folder, slug in matched:
             for src in get_catalog_sources(catalog):
                 cid = src.get("id") or src.get("catalogId", "")
                 if cid and cid not in manifest_catalog_ids:
-                    log.warning(
-                        "Catalog ID '%s' (in %s/%s) was NOT found in your "
-                        "AIOMetadata manifest — this source will return no images.",
-                        cid, folder, slug,
-                    )
+                    log.warning("Catalog ID '%s' (in %s/%s) was NOT found in your AIOMetadata manifest.", cid, folder, slug)
+
     for catalog, folder, slug in matched:
         try:
             process_catalog(catalog, folder, slug, force=args.force, mode=args.mode)
@@ -1812,14 +1571,10 @@ Target examples:
 
     log.info("")
     if errors:
-        log.info("╔═════════════════════════════════════════════════════════╗")
-        log.info("║  Done with %d error(s). Check logs above.               ║", errors)
-        log.info("╚═════════════════════════════════════════════════════════╝")
+        log.info("Done with %d error(s). Check logs above.", errors)
         sys.exit(1)
     else:
-        log.info("╔═════════════════════════════════════════════════════════╗")
-        log.info("║              All done — no errors.                       ║")
-        log.info("╚═════════════════════════════════════════════════════════╝")
+        log.info("All done — no errors.")
 
 
 if __name__ == "__main__":

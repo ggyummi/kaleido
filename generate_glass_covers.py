@@ -7,9 +7,8 @@ bottom panel.
 
 The bottom 35% of each image receives:
   • A linear Gaussian blur: 0% strength at 65% image height, 100% at the
-    bottom edge — this is the correct way to achieve a frosted-glass depth
-    effect on a static image (equivalent to CSS backdrop-filter: blur()).
-  • A subtle white frost tint at the same linear gradient strength.
+    bottom edge — the correct static-image equivalent of CSS backdrop-filter:
+    blur(), giving a genuine frosted-glass depth effect.
   • The catalog title rendered in white, lower-left, on top of the glass zone.
 
 Output:
@@ -32,28 +31,27 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-# ── Read-only import of shared utilities ────────────────────────────────────
+# ── Read-only import of shared utilities ────────────────────────────────────────────
 # generate_catalog_assets.py is imported as a module; nothing in it is changed.
 import generate_catalog_assets as _gca
 
 log = logging.getLogger("nuvio.glass")
 
-# ── Canvas / style constants (re-exported from parent) ───────────────────────
+# ── Canvas / style constants (re-exported from parent) ───────────────────────────
 CANVAS_W        = _gca.CANVAS_W         # 1920
 CANVAS_H        = _gca.CANVAS_H         # 1080
 FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
 COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 
-# ── Output root — completely separate from collections/ ─────────────────────
+# ── Output root — completely separate from collections/ ─────────────────────────
 OUTPUT_DIR = Path("main/test")
 
-# ── Glass zone parameters ────────────────────────────────────────────────────
-GLASS_FRACTION  = 0.35   # bottom 35% is the glass panel
-BLUR_RADIUS     = 25     # Gaussian blur radius (px); heavier = more frosted
-FROST_MAX_ALPHA = 50     # peak white tint opacity (0-255 ≈ 20%); keep it subtle
+# ── Glass zone parameters ─────────────────────────────────────────────────────────
+GLASS_FRACTION = 0.35   # bottom 35% is the glass panel
+BLUR_RADIUS    = 25     # Gaussian blur radius (px); heavier = more frosted
 
 
-# ─── Glassmorphism Renderer ──────────────────────────────────────────────────
+# ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
 
 def render_glass_landscape(
     backdrop: Image.Image,
@@ -68,8 +66,7 @@ def render_glass_landscape(
       2. Optionally dim to 50% brightness (focused variant).
       3. Apply a strongly blurred copy of the image to the bottom 35% via a
          linear gradient mask (0 → fully-blurred, bottom-up).
-      4. Composite a subtle white frost tint over the glass zone.
-      5. Render the catalog title in white over the glass zone, lower-left.
+      4. Render the catalog title in white over the glass zone, lower-left.
 
     Returns an RGB Image.
     """
@@ -101,18 +98,7 @@ def render_glass_landscape(
     result = bg.copy()
     result.paste(blurred, (0, 0), blur_mask)
 
-    # 5. White frost tint overlay (same linear gradient, very low opacity)
-    if zone_h > 0:
-        t = np.linspace(0.0, 1.0, zone_h, dtype=np.float32)
-        frost_alpha = np.clip(t * FROST_MAX_ALPHA, 0, 255).astype(np.uint8)
-        frost_arr   = np.zeros((h, w, 4), dtype=np.uint8)
-        frost_arr[glass_start:, :, 0] = 255
-        frost_arr[glass_start:, :, 1] = 255
-        frost_arr[glass_start:, :, 2] = 255
-        frost_arr[glass_start:, :, 3] = frost_alpha[:, np.newaxis]
-        result = Image.alpha_composite(result, Image.fromarray(frost_arr, "RGBA"))
-
-    # 6. Catalog title — white text, lower-left, word-wrapped
+    # 5. Catalog title — white text, lower-left, word-wrapped
     font_path  = _gca._find_font_path()
     font       = _gca._load_font(COVER_FONT_SIZE, font_path)
     max_tw     = int(w * 0.55)
@@ -141,7 +127,7 @@ def render_glass_landscape(
     return result.convert("RGB")
 
 
-# ─── Output Helpers ───────────────────────────────────────────────────────────
+# ─── Output Helpers ────────────────────────────────────────────────────────────────
 
 def assets_exist_glass(folder: str, slug: str) -> bool:
     """Return True when both landscape variants already exist on disk."""
@@ -153,7 +139,7 @@ def assets_exist_glass(folder: str, slug: str) -> bool:
     return True
 
 
-# ─── Per-catalog Orchestration ────────────────────────────────────────────────
+# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────
 
 def process_catalog_glass(
     catalog: dict,
@@ -212,7 +198,7 @@ def process_catalog_glass(
         log.info("    ✓ %s/%s_landscape.jpg + .webp", variant, slug)
 
 
-# ─── CLI & Entry Point ────────────────────────────────────────────────────────
+# ─── CLI & Entry Point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
     logging.basicConfig(

@@ -88,12 +88,12 @@ Ported from `backdrop_T2_flat.py` — identical to the T2 tilt variant but with 
 
 Each catalog generates four cover variants: landscape (1920×1080) and portrait (680×1000), each in both focused and cover states.
 
-- Top backdrop image from the catalog, cropped and scaled to the output dimensions
-- **Bold color-grade overlay** — a diagonal gradient tinted with a deterministic per-catalog accent color (top-left more vivid, bottom-right lighter), giving a cinematic color-toned look
-- **Cinematic bottom gradient** starting fully transparent at ~55% of image height and fading to near-black (#0a0a0a) at the bottom edge — no hard panel boundary
-- **Catalog title** (emoji stripped, original casing) rendered in regular-weight sans-serif, centred horizontally in the bottom 20% of the image
-- `focused`: backdrop dimmed to 50% brightness before the gradient and title are applied — the darkened state shown when a card is selected or hovered
-- `cover`: full-brightness backdrop with the gradient and title — the idle/unfocused state
+- Top backdrop image from the catalog, cropped and scaled to the output dimensions at **full brightness** — no color-wash overlay is applied
+- **Randomly-selected gradient overlay** (one of six styles per render) layered only at the edges/corners — preserves the photo's vibrancy while adding visual style. Styles: `bottom_fade`, `bottom_left`, `corner_glow`, `diagonal_sweep`, `rim_accent`, `dual_corner`. Corner/rim styles use the catalog's deterministic accent color
+- **Cinematic bottom gradient** always present: fully transparent at ~55% of image height, fading to near-black (#0a0a0a) at the bottom edge — no hard panel boundary
+- **Catalog title** (emoji stripped, original casing) rendered bold, lower-left aligned at a fixed 80 pt — consistent size across all catalogs regardless of label length; long labels word-wrap within the left 55% of the image
+- `focused`: backdrop dimmed to 50% brightness before gradients and title are applied — the darkened state shown when a card is selected or hovered
+- `cover`: full-brightness backdrop with gradients and title — the idle/unfocused state
 
 ---
 

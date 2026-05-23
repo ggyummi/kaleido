@@ -158,16 +158,24 @@ jobs:
             N_COV=$(git diff --cached --name-only | grep -c '/cover/'   || true)
             TARGET="${{ github.event.inputs.target }}"
             git commit -m "🎨 Cover assets: target=${TARGET} — ${N_FOC} focused, ${N_COV} cover(s) [Automated]"
-            git pull --rebase \
-              "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
-              ${{ github.ref_name }} || true
-            git push \
-              "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
-              HEAD:${{ github.ref_name }}
-            echo ""
-            echo "✅  Pushed to ${{ github.ref_name }}."
-            echo "    ↓ ${N_FOC}  focused banner(s)"
-            echo "    ↓ ${N_COV}  cover banner(s)"
+            REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase "$REMOTE" ${{ github.ref_name }} 2>/dev/null \
+                || { git rebase --abort 2>/dev/null || true; }
+              if git push "$REMOTE" HEAD:${{ github.ref_name }}; then
+                echo ""
+                echo "✅  Pushed to ${{ github.ref_name }} (attempt ${attempt})."
+                echo "    ↓ ${N_FOC}  focused banner(s)"
+                echo "    ↓ ${N_COV}  cover banner(s)"
+                break
+              fi
+              if [ "${attempt}" -eq 5 ]; then
+                echo "❌  Push failed after 5 attempts."
+                exit 1
+              fi
+              echo "⚠  Attempt ${attempt} failed — retrying in $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
           fi
 
       # ── 8. Purge jsDelivr CDN cache ──────────────────────────────────────────

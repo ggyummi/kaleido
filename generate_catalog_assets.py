@@ -458,7 +458,7 @@ def get_catalog_sources(catalog: dict) -> list[dict]:
 
 def fetch_all_backdrops(
     catalog: dict, limit: int = MAX_TILES
-) -> tuple[list[Image.Image], "Image.Image | None"]:
+) -> tuple[list[Image.Image], list["Image.Image | None"], "Image.Image | None"]:
     """
     Primary data path — mixes backdrops from every entry in catalogSources,
     deduplicating by Stremio meta ID, capping at `limit` images.
@@ -1845,9 +1845,7 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
             return
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
-        _h     = random.random()
-        _r, _g, _b = colorsys.hsv_to_rgb(_h, 0.65, 0.88)
-        accent = (int(_r * 255), int(_g * 255), int(_b * 255))
+        accent = default_accent_for_label(slug)
         log.info("  Cover label: %s  accent: rgb%s", label, accent)
 
         for orientation in ("landscape", "portrait"):

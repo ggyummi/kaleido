@@ -138,10 +138,21 @@ jobs:
             N_BACK=$(git diff --cached --name-only | grep -c '/backdrop/' || true)
             TARGET="${{ github.event.inputs.target }}"
             git commit -m "🖼 Backdrop assets: target=${TARGET} — ${N_BACK} backdrop(s) [Automated]"
-            git push \
-              "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
-              HEAD:${{ github.ref_name }}
-            echo "✅  Pushed ${N_BACK} backdrop(s) to ${{ github.ref_name }}."
+            REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase "$REMOTE" ${{ github.ref_name }} 2>/dev/null \
+                || { git rebase --abort 2>/dev/null || true; }
+              if git push "$REMOTE" HEAD:${{ github.ref_name }}; then
+                echo "✅  Pushed ${N_BACK} backdrop(s) to ${{ github.ref_name }} (attempt ${attempt})."
+                break
+              fi
+              if [ "${attempt}" -eq 5 ]; then
+                echo "❌  Push failed after 5 attempts."
+                exit 1
+              fi
+              echo "⚠  Attempt ${attempt} failed — retrying in $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
           fi
 
       # ── 7. Purge jsDelivr CDN cache ──────────────────────────────────────────

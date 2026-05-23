@@ -1780,7 +1780,21 @@ def assets_exist(folder: str, slug: str, mode: str = "all") -> bool:
 
 # ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────────────────
 
-def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: str = "all") -> None:
+def _quick_image_hash(img: Image.Image) -> str:
+    """Cheap perceptual fingerprint — 8×8 greyscale thumbnail, MD5 of raw bytes."""
+    import hashlib
+    thumb = img.resize((8, 8), Image.NEAREST).convert("L")
+    return hashlib.md5(thumb.tobytes()).hexdigest()
+
+
+def process_catalog(
+    catalog: dict,
+    folder: str,
+    slug: str,
+    force: bool,
+    mode: str = "all",
+    used_cover_hashes: "set[str] | None" = None,
+) -> None:
     name = catalog.get("name") or catalog.get("title") or slug
     base = COLLECTIONS_DIR / folder   # collections/{folder}/
 
@@ -1834,15 +1848,34 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
-        # Use the top backdrop (most popular/recent item) for all 4 cover variants.
-        # Each catalog fetches from its own source so catalogs naturally get different images.
-        if top_backdrop is None:
-            log.info("  Fetching backdrop for cover cards …")
-            _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+        # Build a cover backdrop pool. Reuse what was already fetched for backdrops
+        # if available; otherwise fetch a fresh pool sized to give enough candidates.
+        if do_backdrop and backdrops:
+            cover_pool: list[Image.Image] = backdrops
+        else:
+            log.info("  Fetching backdrop pool for cover card selection …")
+            cover_pool, _, _ = fetch_all_backdrops(catalog, limit=15)
 
-        if top_backdrop is None:
+        if not cover_pool:
             log.warning("  No image available for cover cards — skipping covers.")
             return
+
+        # Walk the pool in order (top title first) and pick the first image whose
+        # content hasn't already been used as a cover/focused backdrop by a previous
+        # catalog in this run.  Backdrop tile outputs are not tracked here — only
+        # cover/focused cards need to be visually distinct across catalogs.
+        _hashes = used_cover_hashes if used_cover_hashes is not None else set()
+        top_backdrop = cover_pool[0]  # fallback if entire pool is exhausted
+        for _candidate in cover_pool:
+            _h = _quick_image_hash(_candidate)
+            if _h not in _hashes:
+                top_backdrop = _candidate
+                _hashes.add(_h)
+                log.info("  Cover backdrop: top unused title from pool.")
+                break
+        else:
+            log.info("  Cover backdrop: pool fully exhausted — reusing top title.")
+            _hashes.add(_quick_image_hash(cover_pool[0]))
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
         accent = default_accent_for_label(slug)
@@ -1958,9 +1991,17 @@ Target examples:
                         "AIOMetadata manifest — this source will return no images.",
                         cid, folder, slug,
                     )
+    # Shared set: tracks which source images have already been used as cover/focused
+    # backdrops in this run so each catalog gets a visually distinct cover card.
+    used_cover_hashes: set[str] = set()
+
     for catalog, folder, slug in matched:
         try:
-            process_catalog(catalog, folder, slug, force=args.force, mode=args.mode)
+            process_catalog(
+                catalog, folder, slug,
+                force=args.force, mode=args.mode,
+                used_cover_hashes=used_cover_hashes,
+            )
         except Exception as exc:
             log.error("Fatal error in '%s/%s': %s", folder, slug, exc, exc_info=True)
             errors += 1

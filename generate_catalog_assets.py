@@ -71,6 +71,18 @@ SOURCE_JSON     = Path("nuvio-collections.json")
 CANVAS_W, CANVAS_H = 1920, 1080
 PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
 FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
+COVER_FONT_SIZE = 80                  # fixed pt size — same for every cover/focused card
+
+# Gradient overlay styles randomly applied to cover/focused cards.
+# All styles retain full image brightness; only edges/corners are tinted.
+_GRADIENT_STYLES = [
+    "bottom_fade",      # clean bottom vignette only
+    "bottom_left",      # bottom vignette + left edge dark fade
+    "corner_glow",      # bottom vignette + accent color glow top-right
+    "diagonal_sweep",   # dark diagonal sweep from bottom-left corner
+    "rim_accent",       # bottom vignette + thin accent color rim at top
+    "dual_corner",      # bottom vignette + accent glow both top corners
+]
 
 # Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
 # even a modest pool gives a full grid; 40 gives good visual variety.
@@ -1587,19 +1599,25 @@ def _fit_font_multiline(
     return best_font, best_lines
 
 
-def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
+def _render_bottom_gradient_text(
+    img: Image.Image,
+    label: str,
+    accent_rgb: tuple[int, int, int] = (180, 120, 60),
+) -> Image.Image:
     """
-    Composite a cinematic bottom-gradient vignette onto `img` then render the
-    catalog title bold, lower-left, with word-wrap for multi-word labels.
+    Composite a gradient overlay onto `img` then render the catalog title bold,
+    lower-left, with word-wrap for multi-word labels.
 
-    Gradient starts transparent at ~55% of image height, fades to near-black
-    (#0a0a0a) at the bottom edge. Text is left-anchored at 8% from the left
-    and sits just above 8% padding from the bottom.
+    A base bottom vignette is always applied (transparent at ~55%, near-black at
+    the bottom edge). One of _GRADIENT_STYLES is randomly layered on top of that
+    for visual variety — none of the styles wash out the main image.
+    Font is always COVER_FONT_SIZE so all cards share the same type size.
     """
-    w, h   = img.size
+    w, h = img.size
     result = img.convert("RGBA")
+    ar, ag, ab = accent_rgb
 
-    # Gradient: transparent at 55%, near-black (#0a0a0a) at 100%
+    # ── Base: bottom vignette (always) ──────────────────────────────────────
     grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
     grad_start = int(h * 0.55)
     if grad_start < h:
@@ -1610,23 +1628,91 @@ def _render_bottom_gradient_text(img: Image.Image, label: str) -> Image.Image:
         grad_arr[grad_start:, :, 1] = 10
         grad_arr[grad_start:, :, 2] = 10
         grad_arr[grad_start:, :, 3] = alpha[:, np.newaxis]
-
     result = Image.alpha_composite(result, Image.fromarray(grad_arr, "RGBA"))
 
-    # Title: lower-left, bold, word-wrapped
-    text_zone_top = int(h * 0.62)
-    text_zone_h   = h - text_zone_top
-    font_path     = _find_font_path()
-    max_tw        = int(w * 0.55)
-    max_th        = int(text_zone_h * 0.60)
-    font, lines   = _fit_font_multiline(label, max_tw, max_th, font_path)
-    _, lh         = _text_bbox("Ag", font)
-    line_step     = int(lh * 1.15)
-    total_text_h  = line_step * len(lines)
-    bottom_pad    = int(h * 0.08)
-    tx            = int(w * 0.08)
-    ty            = h - bottom_pad - total_text_h
-    draw          = ImageDraw.Draw(result)
+    # ── Extra gradient style (randomly chosen) ───────────────────────────────
+    style = random.choice(_GRADIENT_STYLES)
+
+    if style == "bottom_left":
+        left_arr = np.zeros((h, w, 4), dtype=np.uint8)
+        fade_w = int(w * 0.40)
+        xs = np.arange(fade_w, dtype=np.float32)
+        t_left = (1.0 - xs / fade_w) ** 1.6
+        alpha_left = np.clip(t_left * 200, 0, 255).astype(np.uint8)
+        left_arr[:, :fade_w, 0] = 8
+        left_arr[:, :fade_w, 1] = 8
+        left_arr[:, :fade_w, 2] = 10
+        left_arr[:, :fade_w, 3] = alpha_left[np.newaxis, :]
+        result = Image.alpha_composite(result, Image.fromarray(left_arr, "RGBA"))
+
+    elif style == "corner_glow":
+        gw, gh = w // 4, h // 4
+        glow = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+        dg = ImageDraw.Draw(glow)
+        for i in range(15):
+            t_g = i / 15
+            rr = int(math.hypot(gw, gh) * (0.05 + 0.45 * t_g))
+            aa = int(90 * (1 - t_g) ** 2.0)
+            if aa:
+                dg.ellipse([gw - rr, -rr, gw + rr, rr], fill=(ar, ag, ab, aa))
+        glow = glow.resize((w, h), Image.BILINEAR)
+        glow = glow.filter(ImageFilter.GaussianBlur(radius=max(20, w // 80)))
+        result = Image.alpha_composite(result, glow)
+
+    elif style == "diagonal_sweep":
+        xs = np.arange(w, dtype=np.float32)
+        ys = np.arange(h, dtype=np.float32)
+        xg, yg = np.meshgrid(xs, ys)
+        diag_len = math.hypot(w, h)
+        dist = np.sqrt(xg ** 2 + (h - yg) ** 2) / diag_len
+        alpha_d = np.clip((1.0 - dist / 0.55) ** 2.0 * 200, 0, 255).astype(np.uint8)
+        diag_arr = np.zeros((h, w, 4), dtype=np.uint8)
+        diag_arr[:, :, 0] = 8
+        diag_arr[:, :, 1] = 8
+        diag_arr[:, :, 2] = 10
+        diag_arr[:, :, 3] = alpha_d
+        result = Image.alpha_composite(result, Image.fromarray(diag_arr, "RGBA"))
+
+    elif style == "rim_accent":
+        rim_h = max(1, int(h * 0.08))
+        ys_r = np.arange(rim_h, dtype=np.float32)
+        alpha_r = np.clip((1.0 - ys_r / rim_h) ** 1.5 * 60, 0, 255).astype(np.uint8)
+        rim_arr = np.zeros((h, w, 4), dtype=np.uint8)
+        rim_arr[:rim_h, :, 0] = ar
+        rim_arr[:rim_h, :, 1] = ag
+        rim_arr[:rim_h, :, 2] = ab
+        rim_arr[:rim_h, :, 3] = alpha_r[:, np.newaxis]
+        result = Image.alpha_composite(result, Image.fromarray(rim_arr, "RGBA"))
+
+    elif style == "dual_corner":
+        gw2, gh2 = w // 4, h // 4
+        glow2 = Image.new("RGBA", (gw2, gh2), (0, 0, 0, 0))
+        dg2 = ImageDraw.Draw(glow2)
+        for i in range(12):
+            t_g = i / 12
+            rr = int(math.hypot(gw2, gh2) * (0.05 + 0.40 * t_g))
+            aa = int(60 * (1 - t_g) ** 2.0)
+            if aa:
+                dg2.ellipse([gw2 - rr, -rr, gw2 + rr, rr], fill=(ar, ag, ab, aa))
+                dg2.ellipse([-rr, -rr, rr, rr], fill=(ar, ag, ab, aa))
+        glow2 = glow2.resize((w, h), Image.BILINEAR)
+        glow2 = glow2.filter(ImageFilter.GaussianBlur(radius=max(20, w // 80)))
+        result = Image.alpha_composite(result, glow2)
+
+    # else "bottom_fade": only the base vignette, nothing extra
+
+    # ── Title text: fixed size, lower-left, word-wrapped ────────────────────
+    font_path    = _find_font_path()
+    font         = _load_font(COVER_FONT_SIZE, font_path)
+    max_tw       = int(w * 0.55)
+    lines        = _wrap_text(label, font, max_tw)
+    _, lh        = _text_bbox("Ag", font)
+    line_step    = int(lh * 1.15)
+    total_text_h = line_step * len(lines)
+    bottom_pad   = int(h * 0.08)
+    tx           = int(w * 0.08)
+    ty           = h - bottom_pad - total_text_h
+    draw         = ImageDraw.Draw(result)
     for i, line in enumerate(lines):
         draw.text((tx, ty + i * line_step), line, font=font, fill=(255, 255, 255, 255))
 
@@ -1656,12 +1742,11 @@ def render_cover_card(
     bg = _crop_to_ratio(backdrop.convert("RGBA"), out_w, out_h).resize(
         (out_w, out_h), Image.LANCZOS
     )
-    bg = _apply_color_grade(bg, accent_rgb)
     if focused:
         black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
 
-    return _render_bottom_gradient_text(bg, label).convert("RGB")
+    return _render_bottom_gradient_text(bg, label, accent_rgb).convert("RGB")
 
 # ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 

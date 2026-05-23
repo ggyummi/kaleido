@@ -158,6 +158,9 @@ jobs:
             N_COV=$(git diff --cached --name-only | grep -c '/cover/'   || true)
             TARGET="${{ github.event.inputs.target }}"
             git commit -m "🎨 Cover assets: target=${TARGET} — ${N_FOC} focused, ${N_COV} cover(s) [Automated]"
+            git pull --rebase \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
+              ${{ github.ref_name }} || true
             git push \
               "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
               HEAD:${{ github.ref_name }}

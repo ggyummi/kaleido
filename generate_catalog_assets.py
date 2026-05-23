@@ -1834,15 +1834,25 @@ def process_catalog(catalog: dict, folder: str, slug: str, force: bool, mode: st
         log.info("  ✓  backdrop/%s_t2_flat.jpg + .webp", slug)
 
     if do_covers:
-        # Use the top backdrop (most popular/recent item) for all 4 cover variants.
-        # Each catalog fetches from its own source so catalogs naturally get different images.
-        if top_backdrop is None:
-            log.info("  Fetching backdrop for cover cards …")
-            _, _logos, top_backdrop = fetch_all_backdrops(catalog, limit=1)
+        # Build a cover backdrop pool. Reuse what was already fetched for backdrops
+        # if available; otherwise fetch a fresh pool sized to give enough candidates.
+        if do_backdrop and backdrops:
+            cover_pool: list[Image.Image] = backdrops
+        else:
+            log.info("  Fetching backdrop pool for cover card selection …")
+            cover_pool, _, _ = fetch_all_backdrops(catalog, limit=15)
 
-        if top_backdrop is None:
+        if not cover_pool:
             log.warning("  No image available for cover cards — skipping covers.")
             return
+
+        # Deterministically pick a catalog-unique entry from the pool.
+        # Two catalogs with overlapping sources both have the same images at [0];
+        # the slug-derived offset ensures they land on different pool entries.
+        slug_seed    = sum((i + 1) * ord(c) for i, c in enumerate(slug))
+        cover_idx    = slug_seed % len(cover_pool)
+        top_backdrop = cover_pool[cover_idx]
+        log.info("  Cover backdrop: pool[%d/%d]", cover_idx, len(cover_pool))
 
         label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
         accent = default_accent_for_label(slug)

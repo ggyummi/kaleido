@@ -47,8 +47,8 @@ COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
-GLASS_FRACTION = 0.35   # bottom 35% is the glass panel
-BLUR_RADIUS    = 25     # Gaussian blur radius (px); heavier = more frosted
+GLASS_FRACTION = 0.40   # bottom 35% is the glass panel
+BLUR_RADIUS    = 60     # Gaussian blur radius (px); heavier = more frosted
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ Environment variables
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -45,6 +46,7 @@ REPO_SLUG   = os.environ.get("REPO_SLUG", "ggyummi/tiny-deluxe")
 PURGE_BASE  = "https://purge.jsdelivr.net/gh"
 CDN_REF     = "@main"                           # always purge the @main ref
 TIMEOUT     = 20                                # seconds per request
+RATE_DELAY  = 0.5                               # seconds between requests to avoid rate limiting
 
 
 # ── Asset discovery ────────────────────────────────────────────────────────────────────
@@ -99,6 +101,12 @@ def main() -> int:
         default=TIMEOUT,
         help=f"Per-request timeout in seconds (default: {TIMEOUT}).",
     )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=RATE_DELAY,
+        help=f"Delay between requests in seconds to avoid rate limiting (default: {RATE_DELAY}).",
+    )
     args = parser.parse_args()
 
     urls = build_purge_urls(REPO_SLUG)
@@ -113,7 +121,7 @@ def main() -> int:
         print("(dry-run — no requests will be made)")
 
     failed = 0
-    for url in urls:
+    for i, url in enumerate(urls):
         print(f"  {url}")
         if args.dry_run:
             continue
@@ -123,6 +131,8 @@ def main() -> int:
         except (HTTPError, URLError) as exc:
             print(f"    → FAILED: {exc}", file=sys.stderr)
             failed += 1
+        if i < len(urls) - 1:
+            time.sleep(args.delay)
 
     if failed:
         print(f"\n⚠  {failed} purge request(s) failed.", file=sys.stderr)

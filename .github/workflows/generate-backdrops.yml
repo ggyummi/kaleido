@@ -159,4 +159,5 @@ jobs:
       - name: "🧹 Purge jsDelivr CDN cache"
         env:
           REPO_SLUG: ${{ github.repository }}
-        run: python collections/scripts/purge.py || true
+        run: python collections/scripts/purge.py
+        continue-on-error: true

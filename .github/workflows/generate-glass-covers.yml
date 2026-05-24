@@ -81,9 +81,12 @@ jobs:
       - name: "🔤 Download Inter Medium font"
         run: |
           sudo mkdir -p /usr/local/share/fonts
-          sudo curl -fL \
-            "https://github.com/rsms/inter/raw/main/docs/font-files/Inter-Medium.ttf" \
-            -o /usr/local/share/fonts/Inter-Medium.ttf
+          curl -fL \
+            "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip" \
+            -o /tmp/inter.zip
+          sudo unzip -j /tmp/inter.zip "extras/ttf/Inter-Medium.ttf" \
+            -d /usr/local/share/fonts/
+          rm /tmp/inter.zip
           sudo fc-cache -fv
           fc-list | grep -i "inter" | head -5 || true
 

@@ -6,12 +6,10 @@ Generates landscape-only cover and focused cards with a glassmorphism
 bottom panel.
 
 The bottom 35% of each image receives:
-  • A heavy Gaussian blur (radius 45) blended via a power-curve gradient:
-    0% at 65% image height, ~62% at the midpoint, 100% at the bottom edge.
-    This produces the thick, saturated frosted-glass look seen in cinematic
-    UI references — the blur builds quickly and is fully saturated at bottom.
-  • The catalog title rendered in Inter Medium (or fallback), lower-left,
-    on top of the glass zone.
+  • A linear Gaussian blur: 0% strength at 65% image height, 100% at the
+    bottom edge — the correct static-image equivalent of CSS backdrop-filter:
+    blur(), giving a genuine frosted-glass depth effect.
+  • The catalog title rendered in white, lower-left, on top of the glass zone.
 
 Output:
   main/test/{folder}/focused/{catalog}_landscape.jpg(.webp)   — dimmed + glass
@@ -27,7 +25,6 @@ Environment variables (same as generate_catalog_assets.py):
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -50,30 +47,8 @@ COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
-GLASS_FRACTION = 0.35   # bottom 35% is the glass panel
-BLUR_RADIUS    = 45     # Gaussian blur radius (px); heavy = saturated frosted look
-
-# ── Font candidates — Inter Medium preferred, regular-weight fallbacks ────────────
-_GLASS_FONT_CANDIDATES = [
-    # Inter Medium (downloaded by workflow)
-    "/usr/local/share/fonts/Inter-Medium.ttf",
-    "/usr/share/fonts/truetype/inter/Inter-Medium.ttf",
-    # Open Sans Regular (medium-weight feel, installed by workflow)
-    "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf",
-    "/usr/share/fonts/open-sans/OpenSans-Regular.ttf",
-    # Liberation Sans Regular
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-    # DejaVu Sans
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-]
-
-
-def _find_glass_font_path() -> str | None:
-    for p in _GLASS_FONT_CANDIDATES:
-        if os.path.exists(p):
-            return p
-    return None
+GLASS_FRACTION = 0.55   # bottom 35% is the glass panel
+BLUR_RADIUS    = 60     # Gaussian blur radius (px); heavier = more frosted
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
@@ -84,15 +59,14 @@ def render_glass_landscape(
     focused: bool,
 ) -> Image.Image:
     """
-    Render a 1920x1080 landscape card with a glassmorphism bottom zone.
+    Render a 1920×1080 landscape card with a glassmorphism bottom zone.
 
     Steps:
-      1. Crop / resize backdrop to 1920x1080.
+      1. Crop / resize backdrop to 1920×1080.
       2. Optionally dim to 50% brightness (focused variant).
       3. Apply a strongly blurred copy of the image to the bottom 35% via a
-         power-curve gradient mask (0 at top of zone, fully blurred at bottom).
-      4. Render the catalog title in Inter Medium (or fallback) over the glass
-         zone, lower-left, in white.
+         linear gradient mask (0 → fully-blurred, bottom-up).
+      4. Render the catalog title in white over the glass zone, lower-left.
 
     Returns an RGB Image.
     """
@@ -112,22 +86,20 @@ def render_glass_landscape(
     #    the gradient mask controls *how much* blur shows in the glass zone).
     blurred = bg.copy().filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
 
-    # 3. Power-curve gradient mask: 0 at glass_start -> 255 at bottom edge.
-    #    t**0.7 makes the blur build quickly — already ~62% by the midpoint —
-    #    producing the heavy, saturated look at the bottom seen in the reference.
+    # 3. Linear gradient mask: 0 at glass_start → 255 at bottom edge
+    #    This produces the "blur grows stronger as you approach the bottom" look.
     mask_arr = np.zeros((h, w), dtype=np.uint8)
     if zone_h > 0:
         t = np.linspace(0.0, 1.0, zone_h, dtype=np.float32)
-        alpha = np.power(t, 0.7)
-        mask_arr[glass_start:] = np.clip(alpha * 255, 0, 255).astype(np.uint8)[:, np.newaxis]
+        mask_arr[glass_start:] = np.clip(t * 255, 0, 255).astype(np.uint8)[:, np.newaxis]
     blur_mask = Image.fromarray(mask_arr, "L")
 
-    # 4. Paste blurred over sharp using the power-curve gradient mask
+    # 4. Paste blurred over sharp using the linear gradient mask
     result = bg.copy()
     result.paste(blurred, (0, 0), blur_mask)
 
-    # 5. Catalog title — Inter Medium weight, white, lower-left, word-wrapped
-    font_path  = _find_glass_font_path()
+    # 5. Catalog title — white text, lower-left, word-wrapped
+    font_path  = _gca._find_font_path()
     font       = _gca._load_font(COVER_FONT_SIZE, font_path)
     max_tw     = int(w * 0.55)
     lines      = _gca._wrap_text(label, font, max_tw)
@@ -155,7 +127,7 @@ def render_glass_landscape(
     return result.convert("RGB")
 
 
-# ─── Output Helpers ───────────────────────────────────────────────────────────
+# ─── Output Helpers ────────────────────────────────────────────────────────────────
 
 def assets_exist_glass(folder: str, slug: str) -> bool:
     """Return True when both landscape variants already exist on disk."""
@@ -167,7 +139,7 @@ def assets_exist_glass(folder: str, slug: str) -> bool:
     return True
 
 
-# ─── Per-catalog Orchestration ────────────────────────────────────────────────
+# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────
 
 def process_catalog_glass(
     catalog: dict,
@@ -226,7 +198,7 @@ def process_catalog_glass(
         log.info("    ✓ %s/%s_landscape.jpg + .webp", variant, slug)
 
 
-# ─── CLI & Entry Point ────────────────────────────────────────────────────────
+# ─── CLI & Entry Point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
     logging.basicConfig(
@@ -256,11 +228,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    log.info("╔" + "═" * 57 + "╗")
+    log.info("╔═════════════════════════════════════════════════════════╗")
     log.info("║      Nuvio TV · Glassmorphism Cover Generator            ║")
     log.info("║      output : main/test/                                 ║")
-    log.info("║      effect : Gaussian blur r=45, power curve, bottom 35%% ║")
-    log.info("╚" + "═" * 57 + "╝")
+    log.info("║      effect : linear Gaussian blur, bottom 35%%           ║")
+    log.info("╚═════════════════════════════════════════════════════════╝")
 
     _gca.validate_env()
 
@@ -326,14 +298,14 @@ def main() -> None:
 
     log.info("")
     if errors:
-        log.info("╔" + "═" * 57 + "╗")
+        log.info("╔═════════════════════════════════════════════════════════╗")
         log.info("║  Done with %d error(s). Check logs above.               ║", errors)
-        log.info("╚" + "═" * 57 + "╝")
+        log.info("╚═════════════════════════════════════════════════════════╝")
         sys.exit(1)
     else:
-        log.info("╔" + "═" * 57 + "╗")
+        log.info("╔═════════════════════════════════════════════════════════╗")
         log.info("║              All done — no errors.                       ║")
-        log.info("╚" + "═" * 57 + "╝")
+        log.info("╚═════════════════════════════════════════════════════════╝")
 
 
 if __name__ == "__main__":

@@ -9,10 +9,10 @@
 #   main/test/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + glass
 #   main/test/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full-bright + glass
 #
-# The bottom 35% of every image gets a heavy Gaussian blur (radius 45) blended
-# via a power-curve gradient (0 at 65% height, ~62% at midpoint, 100% at bottom)
-# — the correct static-image equivalent of CSS backdrop-filter: blur().
-# The catalog title is rendered in Inter Medium on top of the glass zone.
+# The bottom 35% of every image gets a linear Gaussian blur (strongest at the
+# bottom edge, fading to zero at 65% image height) — the correct static-image
+# equivalent of CSS backdrop-filter: blur().
+# The catalog title is rendered in white on top of the glass zone.
 #
 # This workflow and generate_glass_covers.py are fully self-contained.
 # No existing scripts or workflows are modified.
@@ -66,8 +66,8 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # ── 3. System fonts ───────────────────────────────────────────────────────────────
-      - name: "🖋️ Install fonts (Open Sans, NimbusSans, LiberationSans)"
+      # ── 3. Fonts — required for title rendering ───────────────────────────────────────
+      - name: "🖋️ Install fonts (Open Sans Bold, NimbusSans, LiberationSans)"
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -77,27 +77,14 @@ jobs:
           fc-cache -fv
           fc-list | grep -i "open.sans\|nimbus\|liberation" | head -10 || true
 
-      # ── 4. Inter Medium font ──────────────────────────────────────────────────────────
-      - name: "🔤 Download Inter Medium font"
-        run: |
-          sudo mkdir -p /usr/local/share/fonts
-          curl -fL \
-            "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip" \
-            -o /tmp/inter.zip
-          sudo unzip -j /tmp/inter.zip "extras/ttf/Inter-Medium.ttf" \
-            -d /usr/local/share/fonts/
-          rm /tmp/inter.zip
-          sudo fc-cache -fv
-          fc-list | grep -i "inter" | head -5 || true
-
-      # ── 5. Python dependencies ────────────────────────────────────────────────────────
+      # ── 4. Python dependencies ──────────────────────────────────────────────────────────
       - name: "📦 Install Python dependencies"
         run: |
           python -m pip install --upgrade pip
           pip install requests Pillow numpy
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # ── 6. Validate nuvio-collections.json ───────────────────────────────────────────
+      # ── 5. Validate nuvio-collections.json ───────────────────────────────────────────
       - name: "🔍 Validate nuvio-collections.json"
         run: |
           if [ ! -f nuvio-collections.json ]; then
@@ -125,7 +112,7 @@ jobs:
               sys.exit(1)
           "
 
-      # ── 7. Generate glass cover assets ────────────────────────────────────────────────
+      # ── 6. Generate glass cover assets ─────────────────────────────────────────────
       - name: "✨ Generate glassmorphism cover assets"
         env:
           AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
@@ -140,7 +127,7 @@ jobs:
             --json   nuvio-collections.json \
             $FORCE_FLAG
 
-      # ── 8. Commit & push ──────────────────────────────────────────────────────────────
+      # ── 7. Commit & push ───────────────────────────────────────────────────────────────────
       - name: "📤 Commit & push glass cover assets"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

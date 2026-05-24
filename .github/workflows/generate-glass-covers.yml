@@ -82,7 +82,7 @@ jobs:
         run: |
           sudo mkdir -p /usr/local/share/fonts
           sudo curl -fL \
-            "https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Medium.ttf" \
+            "https://github.com/rsms/inter/raw/main/docs/font-files/Inter-Medium.ttf" \
             -o /usr/local/share/fonts/Inter-Medium.ttf
           sudo fc-cache -fv
           fc-list | grep -i "inter" | head -5 || true

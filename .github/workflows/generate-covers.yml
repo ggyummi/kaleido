@@ -92,25 +92,25 @@ jobs:
             exit 1
           fi
           python3 -c "
-import json, sys
-with open('nuvio-collections.json') as f:
-    data = json.load(f)
-items = data if isinstance(data, list) else data.get('catalogs', [])
-flat = []
-for item in items:
-    flat.extend(item['folders']) if 'folders' in item else flat.append(item)
-matches = [c['id'] for c in flat
-           if c.get('id','').startswith('collections.')
-           and c['id'].count('.') == 2]
-print(f'Found {len(matches)} collections.* catalog(s):')
-for m in matches[:10]:
-    print(f'  {m}')
-if len(matches) > 10:
-    print(f'  ... and {len(matches) - 10} more')
-if not matches:
-    print('Warning: No collections.{folder}.{catalog} IDs found.')
-    sys.exit(1)
-"
+          import json, sys
+          with open('nuvio-collections.json') as f:
+              data = json.load(f)
+          items = data if isinstance(data, list) else data.get('catalogs', [])
+          flat = []
+          for item in items:
+              flat.extend(item['folders']) if 'folders' in item else flat.append(item)
+          matches = [c['id'] for c in flat
+                     if c.get('id','').startswith('collections.')
+                     and c['id'].count('.') == 2]
+          print(f'Found {len(matches)} collections.* catalog(s):')
+          for m in matches[:10]:
+              print(f'  {m}')
+          if len(matches) > 10:
+              print(f'  ... and {len(matches) - 10} more')
+          if not matches:
+              print('Warning: No collections.{folder}.{catalog} IDs found.')
+              sys.exit(1)
+          "
 
       # ── 6. Generate cover assets ─────────────────────────────────────────────────────
       - name: "🚀 Generate cover assets"

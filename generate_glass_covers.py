@@ -36,7 +36,7 @@ log = logging.getLogger("nuvio.glass")
 CANVAS_W        = _gca.CANVAS_W         # 1920
 CANVAS_H        = _gca.CANVAS_H         # 1080
 FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
-COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 100
+COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 200
 
 # ── Output root ─────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("main/test")

@@ -9,13 +9,10 @@
 #   main/test/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + glass
 #   main/test/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full-bright + glass
 #
-# The bottom 35% of every image gets a linear Gaussian blur (strongest at the
-# bottom edge, fading to zero at 65% image height) — the correct static-image
-# equivalent of CSS backdrop-filter: blur().
-# The catalog title is rendered in white on top of the glass zone.
-#
-# This workflow and generate_glass_covers.py are fully self-contained.
-# No existing scripts or workflows are modified.
+# A frosted-glass blur panel covers the bottom 70% of the image (enhanced blur,
+# brightness boost, micro-grit noise). The catalog title is rendered bold,
+# lower-left aligned, one word per line (font size 110pt, fixed).
+# "focused" cards dim the backdrop to 50% brightness before the glass panel.
 #
 # Secrets  (Settings → Secrets and variables → Actions)
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1875,8 +1875,11 @@ Target examples:
 
     manifest_catalog_ids: set[str] = set()
     if AIOMETADATA_URL:
-        manifest_catalog_ids = fetch_manifest_catalog_ids(AIOMETADATA_URL)
-  
+        try:
+            manifest_catalog_ids = fetch_manifest_catalog_ids(AIOMETADATA_URL)
+        except RuntimeError as exc:
+            log.warning("Manifest fetch failed — skipping catalog ID validation: %s", exc)
+
     json_path = Path(args.json)
     if not json_path.exists():
         log.error("Config file not found: %s", json_path)

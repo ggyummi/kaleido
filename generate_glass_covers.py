@@ -255,7 +255,10 @@ def main() -> None:
 
     manifest_catalog_ids: set[str] = set()
     if _gca.AIOMETADATA_URL:
-        manifest_catalog_ids = _gca.fetch_manifest_catalog_ids(_gca.AIOMETADATA_URL)
+        try:
+            manifest_catalog_ids = _gca.fetch_manifest_catalog_ids(_gca.AIOMETADATA_URL)
+        except RuntimeError as exc:
+            log.warning("Manifest fetch failed — skipping catalog ID validation: %s", exc)
 
     json_path = Path(args.json)
     if not json_path.exists():

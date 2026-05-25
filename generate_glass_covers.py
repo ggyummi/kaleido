@@ -27,12 +27,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
-# ── Read-only import of shared utilities ────────────────────────────────────────────
+# ── Read-only import of shared utilities ──────────────────────────────────────────────
 import generate_catalog_assets as _gca
 
 log = logging.getLogger("nuvio.glass")
 
-# ── Canvas / style constants (re-exported from parent) ───────────────────────────
+# ── Canvas / style constants (re-exported from parent) ───────────────────────
 CANVAS_W        = _gca.CANVAS_W         # 1920
 CANVAS_H        = _gca.CANVAS_H         # 1080
 FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
@@ -41,15 +41,15 @@ COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 # Larger fixed font for glass text covers — never shrinks for long titles
 GLASS_COVER_FONT_SIZE = 110
 
-# ── Output root ─────────────────────────────────────────────────────────────────
+# ── Output root ───────────────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("main/test")
 
-# ── Glass zone parameters ─────────────────────────────────────────────────────────
+# ── Glass zone parameters ──────────────────────────────────────────────────────────────────
 GLASS_FRACTION = 0.70   # Proportion of canvas height used by glass panel
 BLUR_RADIUS    = 60     # Gaussian blur radius (px)
 
 
-# ─── Text Layout ──────────────────────────────────────────────────────────────────
+# ─── Text Layout ─────────────────────────────────────────────────────────────────────────────────────
 
 def _wrap_text_glass(label: str, font, max_w: int) -> list[str]:
     """
@@ -85,7 +85,7 @@ def _wrap_text_glass(label: str, font, max_w: int) -> list[str]:
     return lines
 
 
-# ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
+# ─── Glassmorphism Renderer ─────────────────────────────────────────────────────────────────────────────────────
 
 def render_glass_landscape(
     backdrop: Image.Image,
@@ -180,7 +180,7 @@ def render_glass_landscape(
     return result.convert("RGB")
 
 
-# ─── Output Helpers ────────────────────────────────────────────────────────────────
+# ─── Output Helpers ──────────────────────────────────────────────────────────────────────────────────────
 
 def assets_exist_glass(folder: str, slug: str) -> bool:
     """Return True when both landscape variants already exist on disk."""
@@ -192,7 +192,7 @@ def assets_exist_glass(folder: str, slug: str) -> bool:
     return True
 
 
-# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────
+# ─── Per-catalog Orchestration ───────────────────────────────────────────────────────────────────────────────────────────
 
 def process_catalog_glass(
     catalog: dict,
@@ -251,7 +251,7 @@ def process_catalog_glass(
         log.info("    ✓ %s/%s_landscape.jpg + .webp", variant, slug)
 
 
-# ─── CLI & Entry Point ────────────────────────────────────────────────────────────────
+# ─── CLI & Entry Point ───────────────────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     logging.basicConfig(
@@ -281,11 +281,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    log.info("╔═════════════════════════════════════════════════════════╗")
+    log.info("╔════════════════════════════════════════════════════════╗")
     log.info("║      Nuvio TV · Glassmorphism Cover Generator            ║")
     log.info("║      output : main/test/                                 ║")
     log.info("║      effect : Premium Custom Glassmorphism Setup         ║")
-    log.info("╚═════════════════════════════════════════════════════════╝")
+    log.info("╚════════════════════════════════════════════════════════╝")
 
     _gca.validate_env()
 
@@ -351,14 +351,14 @@ def main() -> None:
 
     log.info("")
     if errors:
-        log.info("╔═════════════════════════════════════════════════════════╗")
+        log.info("╔════════════════════════════════════════════════════════╗")
         log.info("║  Done with %d error(s). Check logs above.               ║", errors)
-        log.info("╚═════════════════════════════════════════════════════════╝")
+        log.info("╚════════════════════════════════════════════════════════╝")
         sys.exit(1)
     else:
-        log.info("╔═════════════════════════════════════════════════════════╗")
+        log.info("╔════════════════════════════════════════════════════════╗")
         log.info("║              All done — no errors.                       ║")
-        log.info("╚═════════════════════════════════════════════════════════╝")
+        log.info("╚════════════════════════════════════════════════════════╝")
 
 
 if __name__ == "__main__":

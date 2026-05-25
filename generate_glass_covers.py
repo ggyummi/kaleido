@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageOps
 
 # ── Read-only import of shared utilities ────────────────────────────────────────────
 import generate_catalog_assets as _gca
@@ -42,8 +42,8 @@ COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
-GLASS_FRACTION = 0.55   # Proportion of canvas height used by glass panel
-BLUR_RADIUS    = 165    # Gaussian blur radius (px)
+GLASS_FRACTION = 0.70   # Proportion of canvas height used by glass panel
+BLUR_RADIUS    = 300    # Gaussian blur radius (px)
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ def render_glass_landscape(
     zone_h      = h - glass_start                   # height of glass zone
 
     # 1. Prepare background
+    fixed_backdrop = ImageOps.exif_transpose(backdrop)
     bg = _gca._crop_to_ratio(backdrop.convert("RGBA"), w, h).resize(
         (w, h), Image.LANCZOS
     )

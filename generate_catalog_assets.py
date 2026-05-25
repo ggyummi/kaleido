@@ -40,7 +40,7 @@ from pathlib import Path
 
 import numpy as np
 import requests
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 # ─── Logging ─────────────────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ SOURCE_JSON     = Path("nuvio-collections.json")
 CANVAS_W, CANVAS_H = 1920, 1080
 PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
 FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
-COVER_FONT_SIZE = 80                  # fixed pt size — same for every cover/focused card
+COVER_FONT_SIZE = 110                 # fixed pt size — same for every cover/focused card
 
 # Gradient overlay styles randomly applied to cover/focused cards.
 # All styles retain full image brightness; only edges/corners are tinted.
@@ -1576,6 +1576,40 @@ def _wrap_text(label: str, font, max_w: int) -> list[str]:
     return lines
 
 
+def _wrap_text_glass(label: str, font, max_w: int) -> list[str]:
+    """
+    One word per line layout for large display text.
+    Consecutive words that are individually short (pixel width ≤ 30 % of max_w)
+    are grouped onto the same line, e.g. 'for you' stays together while
+    'International' and 'cinema' each get their own line.
+    """
+    words = label.split()
+    if not words:
+        return [""]
+
+    short_threshold = int(max_w * 0.30)
+    lines: list[str] = []
+    i = 0
+    while i < len(words):
+        word_w, _ = _text_bbox(words[i], font)
+        if word_w <= short_threshold:
+            group = [words[i]]
+            while i + 1 < len(words):
+                nxt = words[i + 1]
+                nxt_w, _ = _text_bbox(nxt, font)
+                combined_w, _ = _text_bbox(" ".join(group + [nxt]), font)
+                if nxt_w <= short_threshold and combined_w <= max_w:
+                    group.append(nxt)
+                    i += 1
+                else:
+                    break
+            lines.append(" ".join(group))
+        else:
+            lines.append(words[i])
+        i += 1
+    return lines
+
+
 def _fit_font_multiline(
     label: str, max_w: int, max_h: int, font_path: str | None
 ) -> tuple:
@@ -1602,117 +1636,61 @@ def _fit_font_multiline(
 def _render_bottom_gradient_text(
     img: Image.Image,
     label: str,
-    accent_rgb: tuple[int, int, int] = (180, 120, 60),
+    accent_rgb: tuple[int, int, int] = (180, 120, 60),  # unused; kept for call-site compatibility
 ) -> Image.Image:
     """
-    Composite a gradient overlay onto `img` then render the catalog title bold,
-    lower-left, with word-wrap for multi-word labels.
-
-    A base bottom vignette is always applied (transparent at ~55%, near-black at
-    the bottom edge). One of _GRADIENT_STYLES is randomly layered on top of that
-    for visual variety — none of the styles wash out the main image.
-    Font is always COVER_FONT_SIZE so all cards share the same type size.
+    Composite a glassmorphism panel onto `img` then render the catalog title
+    lower-left with the one-word-per-line layout and soft shadow.
     """
     w, h = img.size
     result = img.convert("RGBA")
-    ar, ag, ab = accent_rgb
 
-    # ── Base: bottom vignette (always) ──────────────────────────────────────
-    grad_arr   = np.zeros((h, w, 4), dtype=np.uint8)
-    grad_start = int(h * 0.55)
-    if grad_start < h:
-        ys    = np.arange(0, h - grad_start, dtype=np.float32)
-        t     = ys / max(1.0, h - grad_start - 1)
-        alpha = (255 * np.clip(t ** 1.2, 0.0, 1.0)).astype(np.uint8)
-        grad_arr[grad_start:, :, 0] = 10
-        grad_arr[grad_start:, :, 1] = 10
-        grad_arr[grad_start:, :, 2] = 10
-        grad_arr[grad_start:, :, 3] = alpha[:, np.newaxis]
-    result = Image.alpha_composite(result, Image.fromarray(grad_arr, "RGBA"))
+    glass_fraction = 0.70
+    blur_radius    = 60
+    glass_start    = int(h * (1.0 - glass_fraction))
+    zone_h         = h - glass_start
 
-    # ── Extra gradient style (randomly chosen) ───────────────────────────────
-    style = random.choice(_GRADIENT_STYLES)
+    # Enhanced blur layer: brightness boost + contrast softening
+    raw_blur = result.copy().filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    raw_blur = ImageEnhance.Brightness(raw_blur).enhance(1.12)
+    blurred  = ImageEnhance.Contrast(raw_blur).enhance(0.88)
 
-    if style == "bottom_left":
-        left_arr = np.zeros((h, w, 4), dtype=np.uint8)
-        fade_w = int(w * 0.40)
-        xs = np.arange(fade_w, dtype=np.float32)
-        t_left = (1.0 - xs / fade_w) ** 1.6
-        alpha_left = np.clip(t_left * 200, 0, 255).astype(np.uint8)
-        left_arr[:, :fade_w, 0] = 8
-        left_arr[:, :fade_w, 1] = 8
-        left_arr[:, :fade_w, 2] = 10
-        left_arr[:, :fade_w, 3] = alpha_left[np.newaxis, :]
-        result = Image.alpha_composite(result, Image.fromarray(left_arr, "RGBA"))
+    # Linear gradient mask: 0 at glass_start → 255 at bottom
+    mask_arr = np.zeros((h, w), dtype=np.uint8)
+    if zone_h > 0:
+        t = np.linspace(0.0, 1.0, zone_h, dtype=np.float32)
+        mask_arr[glass_start:] = np.clip(t * 255, 0, 255).astype(np.uint8)[:, np.newaxis]
+    result.paste(blurred, (0, 0), Image.fromarray(mask_arr, "L"))
 
-    elif style == "corner_glow":
-        gw, gh = w // 4, h // 4
-        glow = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
-        dg = ImageDraw.Draw(glow)
-        for i in range(15):
-            t_g = i / 15
-            rr = int(math.hypot(gw, gh) * (0.05 + 0.45 * t_g))
-            aa = int(90 * (1 - t_g) ** 2.0)
-            if aa:
-                dg.ellipse([gw - rr, -rr, gw + rr, rr], fill=(ar, ag, ab, aa))
-        glow = glow.resize((w, h), Image.BILINEAR)
-        glow = glow.filter(ImageFilter.GaussianBlur(radius=max(20, w // 80)))
-        result = Image.alpha_composite(result, glow)
+    # Micro-grit noise restricted to the glass zone
+    if zone_h > 0:
+        noise_arr = np.random.normal(0, 5, (h, w, 4)).astype(np.int16)
+        noise_arr[:glass_start, :, :] = 0
+        img_arr = np.clip(np.array(result).astype(np.int16) + noise_arr, 0, 255).astype(np.uint8)
+        result = Image.fromarray(img_arr, "RGBA")
 
-    elif style == "diagonal_sweep":
-        xs = np.arange(w, dtype=np.float32)
-        ys = np.arange(h, dtype=np.float32)
-        xg, yg = np.meshgrid(xs, ys)
-        diag_len = math.hypot(w, h)
-        dist = np.sqrt(xg ** 2 + (h - yg) ** 2) / diag_len
-        alpha_d = np.clip((1.0 - dist / 0.55) ** 2.0 * 200, 0, 255).astype(np.uint8)
-        diag_arr = np.zeros((h, w, 4), dtype=np.uint8)
-        diag_arr[:, :, 0] = 8
-        diag_arr[:, :, 1] = 8
-        diag_arr[:, :, 2] = 10
-        diag_arr[:, :, 3] = alpha_d
-        result = Image.alpha_composite(result, Image.fromarray(diag_arr, "RGBA"))
+    # Typography
+    font_path = _find_font_path()
+    font      = _load_font(COVER_FONT_SIZE, font_path)
+    max_tw    = int(w * 0.55)
+    lines     = _wrap_text_glass(label, font, max_tw)
+    _, lh     = _text_bbox("Ag", font)
+    line_step = int(lh * 1.15)
+    total_h   = line_step * len(lines)
+    bottom_pad = int(h * 0.08)
+    tx = int(w * 0.08)
+    ty = h - bottom_pad - total_h
 
-    elif style == "rim_accent":
-        rim_h = max(1, int(h * 0.08))
-        ys_r = np.arange(rim_h, dtype=np.float32)
-        alpha_r = np.clip((1.0 - ys_r / rim_h) ** 1.5 * 60, 0, 255).astype(np.uint8)
-        rim_arr = np.zeros((h, w, 4), dtype=np.uint8)
-        rim_arr[:rim_h, :, 0] = ar
-        rim_arr[:rim_h, :, 1] = ag
-        rim_arr[:rim_h, :, 2] = ab
-        rim_arr[:rim_h, :, 3] = alpha_r[:, np.newaxis]
-        result = Image.alpha_composite(result, Image.fromarray(rim_arr, "RGBA"))
+    # Soft diffused shadow layer
+    shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(shadow_layer)
+    for i, line in enumerate(lines):
+        s_draw.text((tx, ty + i * line_step + 4), line, font=font, fill=(0, 0, 0, 180))
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=6))
+    result.paste(shadow_layer, (0, 0), shadow_layer)
 
-    elif style == "dual_corner":
-        gw2, gh2 = w // 4, h // 4
-        glow2 = Image.new("RGBA", (gw2, gh2), (0, 0, 0, 0))
-        dg2 = ImageDraw.Draw(glow2)
-        for i in range(12):
-            t_g = i / 12
-            rr = int(math.hypot(gw2, gh2) * (0.05 + 0.40 * t_g))
-            aa = int(60 * (1 - t_g) ** 2.0)
-            if aa:
-                dg2.ellipse([gw2 - rr, -rr, gw2 + rr, rr], fill=(ar, ag, ab, aa))
-                dg2.ellipse([-rr, -rr, rr, rr], fill=(ar, ag, ab, aa))
-        glow2 = glow2.resize((w, h), Image.BILINEAR)
-        glow2 = glow2.filter(ImageFilter.GaussianBlur(radius=max(20, w // 80)))
-        result = Image.alpha_composite(result, glow2)
-
-    # else "bottom_fade": only the base vignette, nothing extra
-
-    # ── Title text: fixed size, lower-left, word-wrapped ────────────────────
-    font_path    = _find_font_path()
-    font         = _load_font(COVER_FONT_SIZE, font_path)
-    max_tw       = int(w * 0.55)
-    lines        = _wrap_text(label, font, max_tw)
-    _, lh        = _text_bbox("Ag", font)
-    line_step    = int(lh * 1.15)
-    total_text_h = line_step * len(lines)
-    bottom_pad   = int(h * 0.08)
-    tx           = int(w * 0.08)
-    ty           = h - bottom_pad - total_text_h
-    draw         = ImageDraw.Draw(result)
+    # Sharp white foreground text
+    draw = ImageDraw.Draw(result)
     for i, line in enumerate(lines):
         draw.text((tx, ty + i * line_step), line, font=font, fill=(255, 255, 255, 255))
 

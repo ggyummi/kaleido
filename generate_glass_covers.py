@@ -2,14 +2,14 @@
 """
 generate_glass_covers.py — Nuvio TV Glassmorphism Cover Generator
 =================================================================
-Generates landscape-only cover and focused cards with a glassmorphism
-bottom panel.
+Generates landscape-only cover and focused cards with an advanced
+glassmorphism bottom panel.
 
-The bottom 35% of each image receives:
-  • A linear Gaussian blur: 0% strength at 65% image height, 100% at the
-    bottom edge — the correct static-image equivalent of CSS backdrop-filter:
-    blur(), giving a genuine frosted-glass depth effect.
-  • The catalog title rendered in white, lower-left, on top of the glass zone.
+The bottom panel features:
+  • An enhanced luminance-boosted blur layer.
+  • A 1px crisp specular edge highlight line at the boundary.
+  • Micro-grit noise texturing for a tactile frosted feel.
+  • Soft, diffused typography drop shadows for spatial depth.
 
 Output:
   main/test/{folder}/focused/{catalog}_landscape.jpg(.webp)   — dimmed + glass
@@ -17,10 +17,6 @@ Output:
 
 Shares ALL data-fetching and utility code with generate_catalog_assets.py via
 a read-only module import — no existing files are modified.
-
-Environment variables (same as generate_catalog_assets.py):
-  AIOMETADATA_URL   Base URL of AIOMetadata/Stremio addon (preferred)
-  TMDB_API_KEY      TMDb API key (optional fallback)
 """
 
 import argparse
@@ -29,10 +25,9 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
 # ── Read-only import of shared utilities ────────────────────────────────────────────
-# generate_catalog_assets.py is imported as a module; nothing in it is changed.
 import generate_catalog_assets as _gca
 
 log = logging.getLogger("nuvio.glass")
@@ -43,12 +38,12 @@ CANVAS_H        = _gca.CANVAS_H         # 1080
 FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
 COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 
-# ── Output root — completely separate from collections/ ─────────────────────────
+# ── Output root ─────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
-GLASS_FRACTION = 0.70   # bottom 35% is the glass panel
-BLUR_RADIUS    = 300     # Gaussian blur radius (px); heavier = more frosted
+GLASS_FRACTION = 0.55   # Proportion of canvas height used by glass panel
+BLUR_RADIUS    = 165    # Gaussian blur radius (px)
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
@@ -59,16 +54,8 @@ def render_glass_landscape(
     focused: bool,
 ) -> Image.Image:
     """
-    Render a 1920×1080 landscape card with a glassmorphism bottom zone.
-
-    Steps:
-      1. Crop / resize backdrop to 1920×1080.
-      2. Optionally dim to 50% brightness (focused variant).
-      3. Apply a strongly blurred copy of the image to the bottom 35% via a
-         linear gradient mask (0 → fully-blurred, bottom-up).
-      4. Render the catalog title in white over the glass zone, lower-left.
-
-    Returns an RGB Image.
+    Render a 1920×1080 landscape card with premium glassmorphism.
+    Includes edge highlights, textured grain, light diffusion, and soft shadows.
     """
     w, h = CANVAS_W, CANVAS_H
     glass_start = int(h * (1.0 - GLASS_FRACTION))  # row where glass begins
@@ -82,12 +69,18 @@ def render_glass_landscape(
         black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
 
-    # 2. Blurred copy of the full image (consistent blur strength everywhere;
-    #    the gradient mask controls *how much* blur shows in the glass zone).
-    blurred = bg.copy().filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
+    # 2. Enhanced Blur Layer (Brightness Boost & Contrast Softening)
+    raw_blur = bg.copy().filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
+    
+    # Boost brightness to mimic internal light scattering inside glass
+    brightener = ImageEnhance.Brightness(raw_blur)
+    raw_blur = brightener.enhance(1.12)
+    
+    # Soften contrast slightly to make the colors feel creamy and diffused
+    contrast_tweak = ImageEnhance.Contrast(raw_blur)
+    blurred = contrast_tweak.enhance(0.88)
 
     # 3. Linear gradient mask: 0 at glass_start → 255 at bottom edge
-    #    This produces the "blur grows stronger as you approach the bottom" look.
     mask_arr = np.zeros((h, w), dtype=np.uint8)
     if zone_h > 0:
         t = np.linspace(0.0, 1.0, zone_h, dtype=np.float32)
@@ -98,7 +91,25 @@ def render_glass_landscape(
     result = bg.copy()
     result.paste(blurred, (0, 0), blur_mask)
 
-    # 5. Catalog title — white text, lower-left, word-wrapped
+    # 5. Inject Micro-Grit Noise ( Frosted Texture restricted to glass zone )
+    if zone_h > 0:
+        # Generate low-intensity monochromatic noise
+        noise_sigma = 5  
+        noise_arr = np.random.normal(0, noise_sigma, (h, w, 4)).astype(np.int16)
+        
+        # Zero out noise anywhere above the glass zone
+        noise_arr[:glass_start, :, :] = 0
+        
+        # Apply noise and clamp safely to pixel limits
+        img_arr = np.array(result).astype(np.int16)
+        img_arr = np.clip(img_arr + noise_arr, 0, 255).astype(np.uint8)
+        result = Image.fromarray(img_arr, "RGBA")
+
+    # 6. Draw Specular Top Border ( Edge Reflection Line )
+    edge_draw = ImageDraw.Draw(result)
+    edge_draw.line([(0, glass_start), (w, glass_start)], fill=(255, 255, 255, 90), width=1)
+
+    # 7. Typography Layout Configuration
     font_path  = _gca._find_font_path()
     font       = _gca._load_font(COVER_FONT_SIZE, font_path)
     max_tw     = int(w * 0.55)
@@ -109,15 +120,22 @@ def render_glass_landscape(
     bottom_pad = int(h * 0.08)
     tx = int(w * 0.08)
     ty = h - bottom_pad - total_h
-    draw = ImageDraw.Draw(result)
 
-    # Soft drop shadow so the title reads on both light and dark glass zones
+    # 8. Render Soft Diffused Text Shadow Layer
+    shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(shadow_layer)
     for i, line in enumerate(lines):
-        draw.text(
-            (tx + 2, ty + i * line_step + 2),
-            line, font=font, fill=(0, 0, 0, 160),
+        # Draw ambient black baseline text shifted slightly lower
+        s_draw.text(
+            (tx, ty + i * line_step + 4),
+            line, font=font, fill=(0, 0, 0, 180),
         )
-    # White title
+    # Blur the text layer separately to soften the cast shadow edge
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=6))
+    result.paste(shadow_layer, (0, 0), shadow_layer)
+
+    # 9. Render Sharp White Title Foreground
+    draw = ImageDraw.Draw(result)
     for i, line in enumerate(lines):
         draw.text(
             (tx, ty + i * line_step),
@@ -231,7 +249,7 @@ def main() -> None:
     log.info("╔═════════════════════════════════════════════════════════╗")
     log.info("║      Nuvio TV · Glassmorphism Cover Generator            ║")
     log.info("║      output : main/test/                                 ║")
-    log.info("║      effect : linear Gaussian blur, bottom 35%%           ║")
+    log.info("║      effect : Premium Custom Glassmorphism Setup         ║")
     log.info("╚═════════════════════════════════════════════════════════╝")
 
     _gca.validate_env()

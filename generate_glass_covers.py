@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
 # ── Read-only import of shared utilities ────────────────────────────────────────────
 import generate_catalog_assets as _gca
@@ -62,7 +62,6 @@ def render_glass_landscape(
     zone_h      = h - glass_start                   # height of glass zone
 
     # 1. Prepare background
-    fixed_backdrop = ImageOps.exif_transpose(backdrop)
     bg = _gca._crop_to_ratio(backdrop.convert("RGBA"), w, h).resize(
         (w, h), Image.LANCZOS
     )
@@ -105,10 +104,6 @@ def render_glass_landscape(
         img_arr = np.array(result).astype(np.int16)
         img_arr = np.clip(img_arr + noise_arr, 0, 255).astype(np.uint8)
         result = Image.fromarray(img_arr, "RGBA")
-
-    # 6. Draw Specular Top Border ( Edge Reflection Line )
-    edge_draw = ImageDraw.Draw(result)
-    edge_draw.line([(0, glass_start), (w, glass_start)], fill=(255, 255, 255, 90), width=1)
 
     # 7. Typography Layout Configuration
     font_path  = _gca._find_font_path()

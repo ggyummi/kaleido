@@ -1,26 +1,26 @@
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # .github/workflows/generate-covers.yml
 #
 # tiny-deluxe · Nuvio TV — Cover Generator
 #
-# Generates Apple TV+-style cover cards for each matched catalog.
+# Generates glassmorphism cover cards for each matched catalog.
 # Four files are written per catalog:
 #
-#   collections/{folder}/focused/{catalog}_landscape.jpg(.webp)   1920×1080 — dimmed + cinematic gradient + title
-#   collections/{folder}/focused/{catalog}_portrait.jpg(.webp)     680×1000  — dimmed + cinematic gradient + title
-#   collections/{folder}/cover/{catalog}_landscape.jpg(.webp)     1920×1080 — full brightness + gradient + title
-#   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)       680×1000  — full brightness + gradient + title
+#   collections/{folder}/focused/{catalog}_landscape.jpg(.webp)   1920×1080 — dimmed + glassmorphism + title
+#   collections/{folder}/focused/{catalog}_portrait.jpg(.webp)     680×1000  — dimmed + glassmorphism + title
+#   collections/{folder}/cover/{catalog}_landscape.jpg(.webp)     1920×1080 — full brightness + glassmorphism + title
+#   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)       680×1000  — full brightness + glassmorphism + title
 #
-# A smooth bottom gradient fades from transparent at ~55% image height to near-black
-# at the bottom edge. The catalog title (emoji stripped, original casing) is rendered
-# bold, lower-left aligned, with word-wrap for multi-word labels.
-# "focused" cards dim the backdrop to 50% brightness before the gradient is applied.
+# A frosted-glass blur panel covers the bottom 70% of the image (enhanced blur,
+# brightness boost, micro-grit noise). The catalog title is rendered bold,
+# lower-left aligned, one word per line (font size 110pt, fixed).
+# "focused" cards dim the backdrop to 50% brightness before the glass panel.
 #
 # Secrets  (Settings → Secrets and variables → Actions)
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 #   AIOMETADATA_URL   Base URL of your AIOMetadata Stremio addon (recommended)
 #   TMDB_API_KEY      TMDb API key (optional fallback)
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 
 name: "🎨 Nuvio · Cover Generator"
 
@@ -52,20 +52,20 @@ jobs:
 
     steps:
 
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      # ── 1. Checkout ────────────────────────────────────────────────────────────────
       - name: "📥 Checkout repository"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── 2. Python ────────────────────────────────────────────────────────────
+      # ── 2. Python ────────────────────────────────────────────────────────────────
       - name: "🐍 Set up Python 3.11"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # ── 3. Font — required for label rendering ───────────────────────────────
+      # ── 3. Font — required for label rendering ───────────────────────────────────────
       # Priority: Open Sans Bold → NimbusSans Regular → LiberationSans Regular
       - name: "🖋 Install fonts (Open Sans Bold, NimbusSans, LiberationSans)"
         run: |
@@ -77,14 +77,14 @@ jobs:
           fc-cache -fv
           fc-list | grep -i "open.sans\|nimbus\|liberation" | head -10 || true
 
-      # ── 4. Python dependencies ───────────────────────────────────────────────
+      # ── 4. Python dependencies ────────────────────────────────────────────────────────
       - name: "📦 Install Python dependencies"
         run: |
           python -m pip install --upgrade pip
           pip install requests Pillow
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # ── 5. Validate nuvio-collections.json ───────────────────────────────────
+      # ── 5. Validate nuvio-collections.json ──────────────────────────────────────────
       - name: "🔍 Validate nuvio-collections.json"
         run: |
           if [ ! -f nuvio-collections.json ]; then
@@ -92,27 +92,27 @@ jobs:
             exit 1
           fi
           python3 -c "
-          import json, sys
-          with open('nuvio-collections.json') as f:
-              data = json.load(f)
-          items = data if isinstance(data, list) else data.get('catalogs', [])
-          flat = []
-          for item in items:
-              flat.extend(item['folders']) if 'folders' in item else flat.append(item)
-          matches = [c['id'] for c in flat
-                     if c.get('id','').startswith('collections.')
-                     and c['id'].count('.') == 2]
-          print(f'Found {len(matches)} collections.* catalog(s):')
-          for m in matches[:10]:
-              print(f'  {m}')
-          if len(matches) > 10:
-              print(f'  ... and {len(matches) - 10} more')
-          if not matches:
-              print('Warning: No collections.{folder}.{catalog} IDs found.')
-              sys.exit(1)
-          "
+import json, sys
+with open('nuvio-collections.json') as f:
+    data = json.load(f)
+items = data if isinstance(data, list) else data.get('catalogs', [])
+flat = []
+for item in items:
+    flat.extend(item['folders']) if 'folders' in item else flat.append(item)
+matches = [c['id'] for c in flat
+           if c.get('id','').startswith('collections.')
+           and c['id'].count('.') == 2]
+print(f'Found {len(matches)} collections.* catalog(s):')
+for m in matches[:10]:
+    print(f'  {m}')
+if len(matches) > 10:
+    print(f'  ... and {len(matches) - 10} more')
+if not matches:
+    print('Warning: No collections.{folder}.{catalog} IDs found.')
+    sys.exit(1)
+"
 
-      # ── 6. Generate cover assets ─────────────────────────────────────────────
+      # ── 6. Generate cover assets ─────────────────────────────────────────────────────
       - name: "🚀 Generate cover assets"
         env:
           AIOMETADATA_URL: ${{ secrets.AIOMETADATA_URL }}
@@ -128,7 +128,7 @@ jobs:
             --json   nuvio-collections.json \
             $FORCE_FLAG
 
-      # ── 7. Commit & push cover assets ────────────────────────────────────────
+      # ── 7. Commit & push cover assets ──────────────────────────────────────────────
       - name: "📤 Commit & push cover assets"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -178,7 +178,7 @@ jobs:
             done
           fi
 
-      # ── 8. Purge jsDelivr CDN cache ──────────────────────────────────────────
+      # ── 8. Purge jsDelivr CDN cache ────────────────────────────────────────────────
       - name: "🧹 Purge jsDelivr CDN cache"
         env:
           REPO_SLUG: ${{ github.repository }}

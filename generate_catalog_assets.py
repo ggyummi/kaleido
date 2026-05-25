@@ -8,9 +8,9 @@ artwork from Stremio addon endpoints (or TMDb as fallback), and writes four
 asset types per catalog into a FLAT directory structure:
 
   collections/{folder}/backdrop/{catalog}.jpg(.webp)  — Prism 3D tilted-grid collage
-  collections/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + cinematic gradient + title (1920×1080)
+  collections/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + glassmorphism + title (1920×1080)
   collections/{folder}/focused/{catalog}_portrait.jpg(.webp)   — same, portrait (680×1000)
-  collections/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full brightness + gradient + title (1920×1080)
+  collections/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full brightness + glassmorphism + title (1920×1080)
   collections/{folder}/cover/{catalog}_portrait.jpg(.webp)     — same, portrait (680×1000)
   collections/{folder}/title/                         — init only; never overwritten
 
@@ -73,16 +73,6 @@ PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
 FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
 COVER_FONT_SIZE = 110                 # fixed pt size — same for every cover/focused card
 
-# Gradient overlay styles randomly applied to cover/focused cards.
-# All styles retain full image brightness; only edges/corners are tinted.
-_GRADIENT_STYLES = [
-    "bottom_fade",      # clean bottom vignette only
-    "bottom_left",      # bottom vignette + left edge dark fade
-    "corner_glow",      # bottom vignette + accent color glow top-right
-    "diagonal_sweep",   # dark diagonal sweep from bottom-left corner
-    "rim_accent",       # bottom vignette + thin accent color rim at top
-    "dual_corner",      # bottom vignette + accent glow both top corners
-]
 
 # Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
 # even a modest pool gives a full grid; 40 gives good visual variety.
@@ -1472,7 +1462,7 @@ def strip_emoji(text: str) -> str:
     return " ".join(text.split())
 
 
-# ─── Cover / Focused Cards (Apple TV+ style cinematic gradient + title) ─────────────────────
+# ─── Cover / Focused Cards (glassmorphism blur panel + title) ───────────────────────────────
 
 def _find_font_path() -> str | None:
     for p in _FONT_CANDIDATES:
@@ -1524,36 +1514,6 @@ def _crop_to_ratio(img: Image.Image, target_w: int, target_h: int) -> Image.Imag
         return img.crop(((iw - new_w) // 2, 0, (iw - new_w) // 2 + new_w, ih))
     new_h = int(iw / target_r)
     return img.crop((0, (ih - new_h) // 2, iw, (ih - new_h) // 2 + new_h))
-
-
-def _apply_color_grade(img: Image.Image, accent_rgb: tuple[int, int, int]) -> Image.Image:
-    """
-    Apply a full-image two-color diagonal gradient overlay.
-    Top-left uses accent_rgb; bottom-right uses a complementary hue (~150° offset).
-    Opacity is 45-60% so the photo reads through.
-    """
-    w, h = img.size
-    ar, ag, ab = accent_rgb
-
-    # Complementary color: shift hue ~150 degrees
-    h_val, s_val, v_val = colorsys.rgb_to_hsv(ar / 255, ag / 255, ab / 255)
-    h2 = (h_val + 0.42) % 1.0
-    r2, g2, b2 = colorsys.hsv_to_rgb(h2, min(1.0, s_val * 1.1), min(1.0, v_val * 0.95))
-    br, bg, bb = int(r2 * 255), int(g2 * 255), int(b2 * 255)
-
-    # t=0 top-left (accent), t=1 bottom-right (complement)
-    xs = np.linspace(0.0, 1.0, w, dtype=np.float32)
-    ys = np.linspace(0.0, 1.0, h, dtype=np.float32)
-    xg, yg = np.meshgrid(xs, ys)
-    t = ((xg + yg) * 0.5).astype(np.float32)
-
-    overlay = np.zeros((h, w, 4), dtype=np.uint8)
-    overlay[:, :, 0] = np.clip(ar * (1 - t) + br * t, 0, 255).astype(np.uint8)
-    overlay[:, :, 1] = np.clip(ag * (1 - t) + bg * t, 0, 255).astype(np.uint8)
-    overlay[:, :, 2] = np.clip(ab * (1 - t) + bb * t, 0, 255).astype(np.uint8)
-    overlay[:, :, 3] = np.clip((0.45 + t * 0.15) * 255, 0, 255).astype(np.uint8)
-
-    return Image.alpha_composite(img.convert("RGBA"), Image.fromarray(overlay, "RGBA"))
 
 
 def _wrap_text(label: str, font, max_w: int) -> list[str]:
@@ -1636,7 +1596,6 @@ def _fit_font_multiline(
 def _render_bottom_gradient_text(
     img: Image.Image,
     label: str,
-    accent_rgb: tuple[int, int, int] = (180, 120, 60),  # unused; kept for call-site compatibility
 ) -> Image.Image:
     """
     Composite a glassmorphism panel onto `img` then render the catalog title
@@ -1702,14 +1661,12 @@ def render_cover_card(
     label: str,
     orientation: str,
     focused: bool,
-    accent_rgb: tuple[int, int, int] = (180, 120, 60),
 ) -> Image.Image:
     """
-    Render a cover card in Apple TV+ style.
+    Render a cover card with glassmorphism bottom panel + title.
     orientation: 'landscape' (1920x1080) or 'portrait' (680x1000).
-    accent_rgb:   deterministic catalog color — bold diagonal gradient overlay.
-    focused=True  → color grade, then dimmed to FOCUSED_DIM, then bottom gradient + title.
-    focused=False → color grade, then full-brightness bottom gradient + title.
+    focused=True  → backdrop dimmed to FOCUSED_DIM before glass panel.
+    focused=False → full-brightness backdrop + glass panel.
     Returns an RGB image.
     """
     if orientation == "portrait":
@@ -1724,7 +1681,7 @@ def render_cover_card(
         black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
 
-    return _render_bottom_gradient_text(bg, label, accent_rgb).convert("RGB")
+    return _render_bottom_gradient_text(bg, label).convert("RGB")
 
 # ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 
@@ -1855,9 +1812,8 @@ def process_catalog(
             log.info("  Cover backdrop: pool fully exhausted — reusing top title.")
             _hashes.add(_quick_image_hash(cover_pool[0]))
 
-        label  = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
-        accent = default_accent_for_label(slug)
-        log.info("  Cover label: %s  accent: rgb%s", label, accent)
+        label = strip_emoji(catalog.get("name") or catalog.get("title") or slug).strip() or slug
+        log.info("  Cover label: %s", label)
 
         for orientation in ("landscape", "portrait"):
             for focused_flag in (True, False):
@@ -1865,7 +1821,7 @@ def process_catalog(
                 log.info("  Rendering %s %s …", variant, orientation)
                 card = render_cover_card(
                     top_backdrop, label, orientation,
-                    focused=focused_flag, accent_rgb=accent,
+                    focused=focused_flag,
                 )
                 save_dual(card, base / variant / f"{slug}_{orientation}")
                 log.info("    ✓ %s/%s_%s.jpg + .webp", variant, slug, orientation)

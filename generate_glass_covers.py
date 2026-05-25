@@ -48,7 +48,7 @@ OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
 GLASS_FRACTION = 0.55   # bottom 35% is the glass panel
-BLUR_RADIUS    = 60     # Gaussian blur radius (px); heavier = more frosted
+BLUR_RADIUS    = 160     # Gaussian blur radius (px); heavier = more frosted
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────

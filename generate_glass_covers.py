@@ -38,12 +38,51 @@ CANVAS_H        = _gca.CANVAS_H         # 1080
 FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
 COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 80
 
+# Larger fixed font for glass text covers — never shrinks for long titles
+GLASS_COVER_FONT_SIZE = 110
+
 # ── Output root ─────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ─────────────────────────────────────────────────────────
 GLASS_FRACTION = 0.70   # Proportion of canvas height used by glass panel
 BLUR_RADIUS    = 60     # Gaussian blur radius (px)
+
+
+# ─── Text Layout ──────────────────────────────────────────────────────────────────
+
+def _wrap_text_glass(label: str, font, max_w: int) -> list[str]:
+    """
+    One word per line layout for large display text.
+    Consecutive words that are individually short (pixel width ≤ 30 % of max_w)
+    are grouped onto the same line, e.g. 'for you' stays together while
+    'International' and 'cinema' each get their own line.
+    """
+    words = label.split()
+    if not words:
+        return [""]
+
+    short_threshold = int(max_w * 0.30)
+    lines: list[str] = []
+    i = 0
+    while i < len(words):
+        word_w, _ = _gca._text_bbox(words[i], font)
+        if word_w <= short_threshold:
+            group = [words[i]]
+            while i + 1 < len(words):
+                nxt = words[i + 1]
+                nxt_w, _ = _gca._text_bbox(nxt, font)
+                combined_w, _ = _gca._text_bbox(" ".join(group + [nxt]), font)
+                if nxt_w <= short_threshold and combined_w <= max_w:
+                    group.append(nxt)
+                    i += 1
+                else:
+                    break
+            lines.append(" ".join(group))
+        else:
+            lines.append(words[i])
+        i += 1
+    return lines
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────
@@ -107,9 +146,9 @@ def render_glass_landscape(
 
     # 7. Typography Layout Configuration
     font_path  = _gca._find_font_path()
-    font       = _gca._load_font(COVER_FONT_SIZE, font_path)
+    font       = _gca._load_font(GLASS_COVER_FONT_SIZE, font_path)
     max_tw     = int(w * 0.55)
-    lines      = _gca._wrap_text(label, font, max_tw)
+    lines      = _wrap_text_glass(label, font, max_tw)
     _, lh      = _gca._text_bbox("Ag", font)
     line_step  = int(lh * 1.15)
     total_h    = line_step * len(lines)

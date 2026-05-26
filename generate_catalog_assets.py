@@ -107,7 +107,13 @@ _FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf",
     "/usr/share/fonts/truetype/open-sans/OpenSans-SemiBold.ttf",
     "/usr/share/fonts/open-sans/OpenSans-Bold.ttf",
-    # Helvetica-equivalent fallbacks
+    # Liberation Sans Bold (widely available on Linux)
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    # DejaVu Sans Bold
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    # Helvetica-equivalent fallbacks (regular weight)
     "/usr/share/fonts/opentype/urw-base35/NimbusSans-Regular.otf",
     "/usr/share/fonts/urw-base35/NimbusSans-Regular.otf",
     "/usr/share/fonts/type1/urw-base35/NimbusSans-Regular.otf",

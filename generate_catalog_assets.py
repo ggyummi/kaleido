@@ -71,7 +71,8 @@ SOURCE_JSON     = Path("nuvio-collections.json")
 CANVAS_W, CANVAS_H = 1920, 1080
 PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
 FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
-COVER_FONT_SIZE = 110                 # fixed pt size — same for every cover/focused card
+COVER_FONT_SIZE = 150                 # fixed pt size — same for every cover/focused card
+COVER_RADIUS = 32                     # rounded-corner radius for cover/focused card output
 
 
 # Backdrop images to fetch per catalog.  The Prism engine tiles internally, so
@@ -1681,7 +1682,12 @@ def render_cover_card(
         black = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
 
-    return _render_bottom_gradient_text(bg, label).convert("RGB")
+    result   = _render_bottom_gradient_text(bg, label)
+    scaled_r = max(8, int(COVER_RADIUS * out_w / CANVAS_W))
+    mask     = rounded_rect_mask(out_w, out_h, radius=scaled_r)
+    clipped  = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+    clipped.paste(result, mask=mask)
+    return clipped.convert("RGB")
 
 # ─── I/O Helpers ────────────────────────────────────────────────────────────────────────────────────
 

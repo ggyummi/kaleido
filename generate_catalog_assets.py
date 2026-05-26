@@ -1611,8 +1611,8 @@ def _render_bottom_gradient_text(
     w, h = img.size
     result = img.convert("RGBA")
 
-    glass_fraction = 0.70
-    blur_radius    = 60
+    glass_fraction = 0.60
+    blur_radius    = 600
     glass_start    = int(h * (1.0 - glass_fraction))
     zone_h         = h - glass_start
 

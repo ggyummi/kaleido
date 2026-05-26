@@ -72,7 +72,7 @@ CANVAS_W, CANVAS_H = 1920, 1080
 PORTRAIT_W, PORTRAIT_H = 680, 1000   # portrait canvas dimensions
 FOCUSED_DIM = 0.50                    # dim strength: 0=black, 1=original
 COVER_FONT_SIZE = 150                 # fixed pt size — same for every cover/focused card
-COVER_RADIUS = 100                    # rounded-corner radius for cover/focused card output
+COVER_RADIUS = 32                     # rounded-corner radius for cover/focused card output
 
 
 # Backdrop images to fetch per catalog.  The Prism engine tiles internally, so

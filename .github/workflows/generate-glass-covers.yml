@@ -9,10 +9,10 @@
 #   main/test/{folder}/focused/{catalog}_landscape.jpg(.webp)  — dimmed + glass
 #   main/test/{folder}/cover/{catalog}_landscape.jpg(.webp)    — full-bright + glass
 #
-# A frosted-glass blur panel covers the bottom 70% of the image (enhanced blur,
-# brightness boost, micro-grit noise). The catalog title is rendered bold,
-# lower-left aligned, one word per line (font size 110pt, fixed).
-# "focused" cards dim the backdrop to 50% brightness before the glass panel.
+# A frosted-glass blur panel covers the bottom 22% of the image (subtle blur,
+# dark scrim gradient, micro-grit noise, 1px specular edge). The catalog title
+# is rendered bold, lower-left aligned, one word per line (font size 130pt, fixed).
+# "focused" cards blend the backdrop with 28% black before the glass panel.
 #
 # Secrets  (Settings → Secrets and variables → Actions)
 # ─────────────────────────────────────────────────────────────────────────────

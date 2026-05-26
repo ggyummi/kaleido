@@ -39,14 +39,14 @@ FOCUSED_DIM     = _gca.FOCUSED_DIM      # 0.50
 COVER_FONT_SIZE = _gca.COVER_FONT_SIZE  # 110
 
 # Larger fixed font for glass text covers — never shrinks for long titles
-GLASS_COVER_FONT_SIZE = 110
+GLASS_COVER_FONT_SIZE = 130
 
 # ── Output root ───────────────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path("main/test")
 
 # ── Glass zone parameters ──────────────────────────────────────────────────────────────────
-GLASS_FRACTION = 0.70   # Proportion of canvas height used by glass panel
-BLUR_RADIUS    = 60     # Gaussian blur radius (px)
+GLASS_FRACTION = 0.22   # Proportion of canvas height used by glass panel
+BLUR_RADIUS    = 40     # Gaussian blur radius (px)
 
 
 # ─── Glassmorphism Renderer ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -70,18 +70,11 @@ def render_glass_landscape(
     )
     if focused:
         black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
-        bg    = Image.blend(bg, black, 1.0 - FOCUSED_DIM)
+        bg    = Image.blend(bg, black, 0.28)  # 28% black → 72% original brightness
 
-    # 2. Enhanced Blur Layer (Brightness Boost & Contrast Softening)
+    # 2. Blur Layer — subtle frosted feel only, no brightness boost
     raw_blur = bg.copy().filter(ImageFilter.GaussianBlur(radius=BLUR_RADIUS))
-    
-    # Boost brightness to mimic internal light scattering inside glass
-    brightener = ImageEnhance.Brightness(raw_blur)
-    raw_blur = brightener.enhance(1.12)
-    
-    # Soften contrast slightly to make the colors feel creamy and diffused
-    contrast_tweak = ImageEnhance.Contrast(raw_blur)
-    blurred = contrast_tweak.enhance(0.88)
+    blurred  = ImageEnhance.Contrast(raw_blur).enhance(0.94)
 
     # 3. Linear gradient mask: 0 at glass_start → 255 at bottom edge
     mask_arr = np.zeros((h, w), dtype=np.uint8)
@@ -94,46 +87,51 @@ def render_glass_landscape(
     result = bg.copy()
     result.paste(blurred, (0, 0), blur_mask)
 
-    # 5. Inject Micro-Grit Noise ( Frosted Texture restricted to glass zone )
+    # 5. Dark scrim gradient at the bottom for text legibility
+    scrim_start = int(h * 0.74)
+    scrim_arr   = np.zeros((h, w, 4), dtype=np.uint8)
+    for y in range(scrim_start, h):
+        t = (y - scrim_start) / max(1, h - scrim_start)
+        scrim_arr[y, :, 3] = int(175 * (t ** 1.2))
+    result = Image.alpha_composite(result, Image.fromarray(scrim_arr, "RGBA"))
+
+    # 6. Specular 1px edge at the glass boundary (very subtle)
+    _edge_draw = ImageDraw.Draw(result)
+    _edge_draw.line([(0, glass_start), (w - 1, glass_start)], fill=(255, 255, 255, 28), width=1)
+
+    # 7. Micro-Grit Noise — frosted texture restricted to glass zone
     if zone_h > 0:
-        # Generate low-intensity monochromatic noise
-        noise_sigma = 5  
+        noise_sigma = 4
         noise_arr = np.random.normal(0, noise_sigma, (h, w, 4)).astype(np.int16)
-        
-        # Zero out noise anywhere above the glass zone
         noise_arr[:glass_start, :, :] = 0
-        
-        # Apply noise and clamp safely to pixel limits
         img_arr = np.array(result).astype(np.int16)
         img_arr = np.clip(img_arr + noise_arr, 0, 255).astype(np.uint8)
         result = Image.fromarray(img_arr, "RGBA")
 
-    # 7. Typography Layout Configuration
+    # 8. Typography Layout Configuration
     font_path  = _gca._find_font_path()
     font       = _gca._load_font(GLASS_COVER_FONT_SIZE, font_path)
-    max_tw     = int(w * 0.55)
+    max_tw     = int(w * 0.65)
     lines      = _gca._wrap_text_glass(label, font, max_tw)
     _, lh      = _gca._text_bbox("Ag", font)
     line_step  = int(lh * 1.15)
     total_h    = line_step * len(lines)
-    bottom_pad = int(h * 0.08)
-    tx = int(w * 0.08)
+    bottom_pad = int(h * 0.07)
+    tx = int(w * 0.06)
     ty = h - bottom_pad - total_h
 
-    # 8. Render Soft Diffused Text Shadow Layer
+    # 9. Render Soft Diffused Text Shadow Layer
     shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     s_draw = ImageDraw.Draw(shadow_layer)
     for i, line in enumerate(lines):
-        # Draw ambient black baseline text shifted slightly lower
         s_draw.text(
             (tx, ty + i * line_step + 4),
-            line, font=font, fill=(0, 0, 0, 180),
+            line, font=font, fill=(0, 0, 0, 200),
         )
-    # Blur the text layer separately to soften the cast shadow edge
-    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=6))
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=8))
     result.paste(shadow_layer, (0, 0), shadow_layer)
 
-    # 9. Render Sharp White Title Foreground
+    # 10. Render Sharp White Title Foreground
     draw = ImageDraw.Draw(result)
     for i, line in enumerate(lines):
         draw.text(
